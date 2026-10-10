@@ -37,6 +37,7 @@ interface Product {
   image_url: string;
   images?: string[];
   active: boolean;
+  featured?: boolean;
   category?: string;
 }
 
@@ -73,11 +74,12 @@ export default function AdminDashboard() {
   const [createStock, setCreateStock] = useState<number | ''>(5);
   const [createDescription, setCreateDescription] = useState('');
   const [createFullDescription, setCreateFullDescription] = useState('');
+  const [createFeatured, setCreateFeatured] = useState<boolean>(false);
   const [createFiles, setCreateFiles] = useState<File[]>([]);
   const [isCreating, setIsCreating] = useState<boolean>(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
-  // Estados: Editar Producto y Reorganizar Imágenes
+  // Estados: Editar Producto
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [editCategory, setEditCategory] = useState('Tecnología');
@@ -85,12 +87,12 @@ export default function AdminDashboard() {
   const [editStock, setEditStock] = useState<number | ''>(0);
   const [editDescription, setEditDescription] = useState('');
   const [editFullDescription, setEditFullDescription] = useState('');
+  const [editFeatured, setEditFeatured] = useState<boolean>(false);
   const [editImages, setEditImages] = useState<string[]>([]);
   const [editNewFiles, setEditNewFiles] = useState<File[]>([]);
   const [isUpdating, setIsUpdating] = useState<boolean>(false);
   const [editError, setEditError] = useState<string | null>(null);
 
-  // Comprobar sesión de administrador
   useEffect(() => {
     async function checkSession() {
       const { data: { session } } = await supabase.auth.getSession();
@@ -163,7 +165,6 @@ export default function AdminDashboard() {
     }
   }, [isAuthenticated]);
 
-  // Actualizar pedido
   const handleUpdateOrderStatus = async (orderId: string, newStatus: 'completado' | 'cancelado') => {
     setUpdatingId(orderId);
     try {
@@ -177,7 +178,6 @@ export default function AdminDashboard() {
     }
   };
 
-  // Visibilidad directa
   const handleToggleProductActive = async (productId: string, currentActive: boolean) => {
     try {
       const { error } = await supabase.from('products').update({ active: !currentActive }).eq('id', productId);
@@ -190,7 +190,19 @@ export default function AdminDashboard() {
     }
   };
 
-  // Stock rápido
+  // Alternar Destacado en Banner
+  const handleToggleProductFeatured = async (productId: string, currentFeatured: boolean) => {
+    try {
+      const { error } = await supabase.from('products').update({ featured: !currentFeatured }).eq('id', productId);
+      if (error) alert('Error al actualizar banner: ' + error.message);
+      else {
+        setProducts((prev) => prev.map((p) => (p.id === productId ? { ...p, featured: !currentFeatured } : p)));
+      }
+    } catch (err: any) {
+      alert('Error: ' + err?.message);
+    }
+  };
+
   const handleUpdateStock = async (productId: string, newStock: number) => {
     if (newStock < 0) return;
     try {
@@ -204,7 +216,6 @@ export default function AdminDashboard() {
     }
   };
 
-  // Eliminar producto
   const handleDeleteProduct = async (productId: string, title: string) => {
     if (!window.confirm(`¿Estás seguro de eliminar permanentemente "${title}"?`)) return;
     try {
@@ -219,7 +230,6 @@ export default function AdminDashboard() {
     }
   };
 
-  // Subir archivos a Storage
   const uploadFilesToStorage = async (files: File[]): Promise<string[]> => {
     const urls: string[] = [];
     for (const file of files) {
@@ -236,7 +246,6 @@ export default function AdminDashboard() {
     return urls;
   };
 
-  // CREAR PRODUCTO
   const handleCreateProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!createTitle || createPrice === '' || createStock === '') {
@@ -261,6 +270,7 @@ export default function AdminDashboard() {
           image_url: mainImg,
           images: imagesList,
           active: true,
+          featured: createFeatured,
         },
       ]).select();
 
@@ -273,6 +283,7 @@ export default function AdminDashboard() {
         setCreateStock(5);
         setCreateDescription('');
         setCreateFullDescription('');
+        setCreateFeatured(false);
         setCreateFiles([]);
         alert('¡Producto creado exitosamente!');
       }
@@ -283,7 +294,6 @@ export default function AdminDashboard() {
     }
   };
 
-  // INICIAR EDICIÓN DE UN PRODUCTO
   const startEditProduct = (prod: Product) => {
     setEditingProduct(prod);
     setEditTitle(prod.title);
@@ -292,8 +302,8 @@ export default function AdminDashboard() {
     setEditStock(prod.stock);
     setEditDescription(prod.description || '');
     setEditFullDescription(prod.full_description || prod.description || '');
+    setEditFeatured(Boolean(prod.featured));
     
-    // Normalizar lista de imágenes existentes
     const existingImgs = prod.images && prod.images.length > 0
       ? prod.images
       : (prod.image_url ? [prod.image_url] : []);
@@ -302,7 +312,6 @@ export default function AdminDashboard() {
     setEditError(null);
   };
 
-  // MOVER IMAGEN A LA IZQUIERDA (SUBIR PRIORIDAD)
   const moveImageLeft = (index: number) => {
     if (index === 0) return;
     setEditImages((prev) => {
@@ -314,7 +323,6 @@ export default function AdminDashboard() {
     });
   };
 
-  // MOVER IMAGEN A LA DERECHA (BAJAR PRIORIDAD)
   const moveImageRight = (index: number) => {
     if (index === editImages.length - 1) return;
     setEditImages((prev) => {
@@ -326,12 +334,10 @@ export default function AdminDashboard() {
     });
   };
 
-  // REMOVER IMAGEN ESPECÍFICA
   const removeImageAt = (index: number) => {
     setEditImages((prev) => prev.filter((_, i) => i !== index));
   };
 
-  // GUARDAR EDICIÓN DE PRODUCTO
   const handleSaveEditProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingProduct) return;
@@ -344,7 +350,6 @@ export default function AdminDashboard() {
     setEditError(null);
 
     try {
-      // Subir fotos adicionales si seleccionó nuevas
       let newlyUploadedUrls: string[] = [];
       if (editNewFiles.length > 0) {
         newlyUploadedUrls = await uploadFilesToStorage(editNewFiles);
@@ -362,6 +367,7 @@ export default function AdminDashboard() {
           stock: Number(editStock),
           description: editDescription,
           full_description: editFullDescription || editDescription,
+          featured: editFeatured,
           image_url: finalMainImage,
           images: finalImages.length > 0 ? finalImages : [finalMainImage],
         })
@@ -377,7 +383,7 @@ export default function AdminDashboard() {
           );
         }
         setEditingProduct(null);
-        alert('¡Producto y orden de imágenes actualizados exitosamente!');
+        alert('¡Producto y cambios en el banner guardados exitosamente!');
       }
     } catch (err: any) {
       setEditError(err?.message || 'Error guardando cambios');
@@ -401,7 +407,6 @@ export default function AdminDashboard() {
     );
   }
 
-  // PANTALLA LOGIN
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-[#060814] flex items-center justify-center p-4">
@@ -475,7 +480,6 @@ export default function AdminDashboard() {
 
   return (
     <div className="min-h-screen bg-[#060814] text-slate-100 flex flex-col font-sans">
-      {/* HEADER */}
       <header className="sticky top-0 z-30 bg-[#0d122b]/90 backdrop-blur-md border-b border-purple-500/20 px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <span className="text-xl">⚙️</span>
@@ -507,7 +511,6 @@ export default function AdminDashboard() {
         </div>
       </header>
 
-      {/* PESTAÑAS */}
       <div className="bg-[#0b0e24] border-b border-purple-500/20 px-6">
         <div className="max-w-7xl mx-auto flex gap-2 overflow-x-auto py-2.5">
           <button
@@ -571,7 +574,6 @@ export default function AdminDashboard() {
           </div>
         ) : (
           <>
-            {/* ALERTA STOCK */}
             {lowStockProducts.length > 0 && (
               <div className="mb-6 bg-rose-950/40 border border-rose-500/50 rounded-2xl p-4 shadow-lg">
                 <div className="flex items-center gap-2 mb-2 text-rose-300 font-bold text-sm">
@@ -786,7 +788,6 @@ export default function AdminDashboard() {
                       className="bg-[#0d122b] border border-purple-500/25 rounded-2xl p-5 shadow-lg flex flex-col justify-between"
                     >
                       <div>
-                        {/* Imagen principal y Badge */}
                         <div className="flex items-center gap-3 mb-3">
                           <img
                             src={prod.image_url || (prod.images && prod.images[0]) || '/logo.png'}
@@ -794,9 +795,16 @@ export default function AdminDashboard() {
                             className="w-14 h-14 object-cover rounded-xl bg-slate-800 border border-purple-500/30"
                           />
                           <div className="flex-1 min-w-0">
-                            <span className="text-[10px] bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded-full border border-purple-500/30">
-                              {prod.category || 'General'}
-                            </span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded-full border border-purple-500/30">
+                                {prod.category || 'General'}
+                              </span>
+                              {prod.featured && (
+                                <span className="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded-full font-bold">
+                                  ⭐ En Banner
+                                </span>
+                              )}
+                            </div>
                             <h4 className="text-sm font-bold text-white truncate mt-1">{prod.title}</h4>
                             <p className="text-xs text-slate-400">
                               {prod.images ? `${prod.images.length} fotos` : '1 foto'}
@@ -835,7 +843,23 @@ export default function AdminDashboard() {
                           </div>
                         </div>
 
-                        {/* Botones de acción: Editar, Visibilidad, Eliminar */}
+                        {/* Botón rápido para Alternar en Banner */}
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-slate-300">Promocionar en Banner:</span>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleProductFeatured(prod.id, Boolean(prod.featured))}
+                            className={`px-3 py-1 rounded-full text-[11px] font-bold transition cursor-pointer ${
+                              prod.featured
+                                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                                : 'bg-slate-800 text-slate-400 border border-slate-700'
+                            }`}
+                          >
+                            {prod.featured ? '⭐ Sí (Destacado)' : '✕ No'}
+                          </button>
+                        </div>
+
+                        {/* Acciones: Editar, Visibilidad, Eliminar */}
                         <div className="flex items-center justify-between pt-1 gap-2">
                           <button
                             onClick={() => startEditProduct(prod)}
@@ -932,7 +956,7 @@ export default function AdminDashboard() {
         )}
       </main>
 
-      {/* MODAL 1: EDITAR PRODUCTO Y ORGANIZADOR DE FOTOS */}
+      {/* MODAL EDITAR PRODUCTO */}
       {editingProduct && (
         <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
           <div className="bg-[#0d122b] border border-purple-500/40 rounded-3xl max-w-2xl w-full p-6 sm:p-8 relative shadow-2xl my-8 max-h-[92vh] flex flex-col">
@@ -948,7 +972,7 @@ export default function AdminDashboard() {
               <h3 className="text-lg font-bold text-white">Editar Producto y Galería</h3>
             </div>
             <p className="text-xs text-slate-400 mb-4">
-              Modifica precios, descripciones y acomoda el orden de las fotos arrastrando o moviendo con las flechas.
+              Modifica precios, descripciones y acomoda el orden de las fotos.
             </p>
 
             {editError && (
@@ -1008,6 +1032,20 @@ export default function AdminDashboard() {
                 </div>
               </div>
 
+              {/* Casilla de Destacar en Banner */}
+              <div className="bg-[#141a38] border border-purple-500/30 rounded-xl p-3 flex items-center justify-between">
+                <div>
+                  <p className="text-white font-bold text-xs">⭐ Promocionar en Banner Rotativo de la Tienda</p>
+                  <p className="text-[11px] text-slate-400">El producto aparecerá como una diapositiva destacada principal.</p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={editFeatured}
+                  onChange={(e) => setEditFeatured(e.target.checked)}
+                  className="w-5 h-5 rounded border-purple-500 text-purple-600 focus:ring-purple-500 cursor-pointer"
+                />
+              </div>
+
               <div>
                 <label className="block text-slate-300 font-semibold mb-1">Descripción Breve (Catálogo)</label>
                 <textarea
@@ -1028,7 +1066,7 @@ export default function AdminDashboard() {
                 />
               </div>
 
-              {/* SECCIÓN ORGANIZADORA DE IMÁGENES */}
+              {/* ORGANIZADOR DE FOTOS */}
               <div className="bg-[#141a38] border border-purple-500/30 rounded-2xl p-4">
                 <div className="flex justify-between items-center mb-2">
                   <div>
@@ -1036,7 +1074,7 @@ export default function AdminDashboard() {
                       🖼️ Organizador de Galería e Imagen de Portada
                     </label>
                     <p className="text-[11px] text-slate-400">
-                      La <strong>Foto #1</strong> es la portada que se muestra en el catálogo. Usa las flechas para ordenar.
+                      La <strong>Foto #1</strong> es la portada. Usa ◀ y ▶ para reordenar.
                     </p>
                   </div>
                   <span className="text-xs text-purple-300 font-semibold">{editImages.length} fotos</span>
@@ -1063,7 +1101,6 @@ export default function AdminDashboard() {
                           <img src={imgUrl} alt={`Foto ${idx}`} className="w-full h-full object-cover" />
                         </div>
 
-                        {/* Botones para Mover izquierda/derecha y Borrar */}
                         <div className="flex items-center justify-between w-full px-1">
                           <button
                             type="button"
@@ -1099,7 +1136,6 @@ export default function AdminDashboard() {
                   </div>
                 )}
 
-                {/* Subir fotos adicionales al producto en edición */}
                 <div className="mt-3 pt-3 border-t border-purple-500/20">
                   <label className="block text-slate-300 font-semibold mb-1">
                     ➕ Añadir más fotos al producto
@@ -1117,7 +1153,7 @@ export default function AdminDashboard() {
                   />
                   {editNewFiles.length > 0 && (
                     <p className="text-[11px] text-emerald-300 mt-1">
-                      + {editNewFiles.length} foto(s) nuevas listas para sumarse a la galería.
+                      + {editNewFiles.length} foto(s) nuevas listas para sumarse.
                     </p>
                   )}
                 </div>
@@ -1132,7 +1168,7 @@ export default function AdminDashboard() {
                   {isUpdating ? (
                     <>
                       <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                      <span>Guardando cambios y organizando fotos...</span>
+                      <span>Guardando cambios...</span>
                     </>
                   ) : (
                     <span>Guardar Cambios del Producto</span>
@@ -1144,7 +1180,7 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {/* MODAL 2: CREAR NUEVO PRODUCTO */}
+      {/* MODAL CREAR PRODUCTO */}
       {showAddModal && (
         <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
           <div className="bg-[#0d122b] border border-purple-500/40 rounded-3xl max-w-xl w-full p-6 sm:p-8 relative shadow-2xl my-8 max-h-[90vh] flex flex-col">
@@ -1160,7 +1196,7 @@ export default function AdminDashboard() {
               <h3 className="text-lg font-bold text-white">Agregar Nuevo Producto</h3>
             </div>
             <p className="text-xs text-slate-400 mb-4">
-              Completa los datos del producto y sube sus fotos para publicarlo en la tienda.
+              Completa los datos del producto y sube sus fotos para publicarlo.
             </p>
 
             {createError && (
@@ -1223,6 +1259,19 @@ export default function AdminDashboard() {
                 </div>
               </div>
 
+              <div className="bg-[#141a38] border border-purple-500/30 rounded-xl p-3 flex items-center justify-between">
+                <div>
+                  <p className="text-white font-bold text-xs">⭐ Promocionar en Banner Rotativo</p>
+                  <p className="text-[11px] text-slate-400">Mostrar este producto en el carrusel de inicio.</p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={createFeatured}
+                  onChange={(e) => setCreateFeatured(e.target.checked)}
+                  className="w-5 h-5 rounded border-purple-500 text-purple-600 focus:ring-purple-500 cursor-pointer"
+                />
+              </div>
+
               <div>
                 <label className="block text-slate-300 font-semibold mb-1">Descripción Breve (Catálogo)</label>
                 <textarea
@@ -1240,7 +1289,7 @@ export default function AdminDashboard() {
                   rows={4}
                   value={createFullDescription}
                   onChange={(e) => setCreateFullDescription(e.target.value)}
-                  placeholder="Especificaciones completas, características principales..."
+                  placeholder="Especificaciones completas..."
                   className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3.5 py-2 text-white focus:outline-none focus:border-purple-400 text-xs"
                 />
               </div>
@@ -1276,7 +1325,7 @@ export default function AdminDashboard() {
                   {isCreating ? (
                     <>
                       <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                      <span>Guardando y subiendo fotos...</span>
+                      <span>Guardando y publicando...</span>
                     </>
                   ) : (
                     <span>Guardar y Publicar Producto</span>

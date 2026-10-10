@@ -15,6 +15,7 @@ interface Product {
   images?: string[];
   category?: string;
   active?: boolean;
+  featured?: boolean;
 }
 
 interface CartItem extends Product {
@@ -33,7 +34,7 @@ export default function Home() {
   const [selectedCategory, setSelectedCategory] = useState<string>('Todas');
   const [favorites, setFavorites] = useState<string[]>([]);
   
-  // Modal de Mi Cuenta / Registro
+  // Mi Cuenta
   const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
   const [authTab, setAuthTab] = useState<'login' | 'register'>('login');
   const [showTermsModal, setShowTermsModal] = useState<boolean>(false);
@@ -43,11 +44,11 @@ export default function Home() {
   const [regAcceptedTerms, setRegAcceptedTerms] = useState(false);
   const [authMsg, setAuthMsg] = useState<{ type: 'ok' | 'error'; text: string } | null>(null);
 
-  // Control del Carrusel Vertical de Banners
+  // Carrusel y WhatsApp
   const [currentSlide, setCurrentSlide] = useState<number>(0);
   const [showWhatsappBubble, setShowWhatsappBubble] = useState<boolean>(true);
 
-  // Formulario de Checkout
+  // Checkout
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerCity, setCustomerCity] = useState('');
@@ -65,54 +66,24 @@ export default function Home() {
   const instagramUrl = "https://www.instagram.com/omniverse_store01?exln=bHVjODYzbWRwNG0y&utm_source=qr";
   const facebookUrl = "https://facebook.com";
 
-  const bannerSlides = [
-    {
-      id: 0,
-      type: 'image',
-      src: '/banner.png',
-      alt: 'Omniverse Store Oficial'
-    },
-    {
-      id: 1,
-      type: 'promo',
-      badge: '🔥 OFERTA DE TEMPORADA',
-      title: '¡Envíos rápidos a toda Colombia!',
-      description: 'Paga con total tranquilidad por transferencia bancaria o en efectivo contra entrega.',
-      btnText: 'Explorar Catálogo',
-      gradient: 'from-[#1a1140] via-[#24135e] to-[#0c0f2b]'
-    },
-    {
-      id: 2,
-      type: 'promo',
-      badge: '🎧 TECNOLOGÍA & ACCESORIOS',
-      title: 'Equipos de alta fidelidad y confort',
-      description: 'Conoce los nuevos Audífonos Gamer Ultra-Light con ultra baja latencia de 30 ms.',
-      btnText: 'Ver Audífonos Pro',
-      gradient: 'from-[#0b1c3a] via-[#161f52] to-[#200d3d]'
-    }
-  ];
-
-  // CARGAR PRODUCTOS DIRECTAMENTE DE SUPABASE (SIN DUPLICADOS)
+  // Cargar productos desde Supabase
   useEffect(() => {
     async function fetchProducts() {
       try {
         const { data, error } = await supabase.from('products').select('*');
-        if (error) {
-          console.error('Error al cargar productos:', error.message);
-        }
+        if (error) console.error('Error cargando productos:', error.message);
 
         if (data && data.length > 0) {
-          // Asignar imágenes y detalles extendidos al producto real
           const enriched = data.map((item: any) => {
-            const isAudifonos = item.title.toLowerCase().includes('audífonos') || item.title.toLowerCase().includes('audifonos');
+            const isAudifonos = item.title?.toLowerCase().includes('audífonos') || item.title?.toLowerCase().includes('audifonos');
             return {
               ...item,
-              images: isAudifonos
+              images: item.images && item.images.length > 0
+                ? item.images
+                : isAudifonos
                 ? ['/audifonosgamer1.png', '/audifonosgamer2.png', '/audifonosgamer3.png']
-                : item.images || [item.image_url],
-              full_description: isAudifonos
-                ? `Lleva tu experiencia de juego y entretenimiento al siguiente nivel.\n\nDiseñados para largas sesiones sin fatiga, estos audífonos combinan libertad inalámbrica, máxima comodidad y rendimiento de nivel competitivo. Con un peso pluma de tan solo 169 gramos, prácticamente olvidarás que los llevas puestos.\n\nGracias a su tecnología de ultra baja latencia (30 ms), escucharás cada paso, disparo y efecto en tiempo real, dándote la ventaja que necesitas en tus partidas. Además, su versatilidad de conexión 3 en 1 (dongle USB/Tipo-C y modo inalámbrico) te permite alternar fácilmente entre PC, consolas y dispositivos móviles sin complicaciones.`
-                : item.description,
+                : [item.image_url || '/logo.png'],
+              full_description: item.full_description || item.description,
             };
           });
           setProducts(enriched);
@@ -120,16 +91,64 @@ export default function Home() {
           setProducts([]);
         }
       } catch (err) {
-        console.error('Excepción al consultar Supabase:', err);
+        console.error('Error:', err);
       } finally {
         setLoading(false);
       }
     }
-
     fetchProducts();
   }, []);
 
+  // Construcción de Diapositivas Dinámicas del Banner
+  const featuredProducts = products.filter((p) => p.featured && p.active !== false);
+
+  const bannerSlides = [
+    // 1. Banner Principal de Imagen con bener001.png
+    {
+      id: 'main-banner',
+      type: 'image',
+      src: '/bener001.png',
+      alt: 'Omniverse Store Oficial'
+    },
+    // 2. Diapositivas dinámicas de los productos escogidos desde /admin
+    ...featuredProducts.map((fp) => ({
+      id: `prod-${fp.id}`,
+      type: 'product',
+      product: fp,
+      badge: '⭐ PRODUCTO DESTACADO',
+      title: fp.title,
+      price: fp.price,
+      description: fp.description,
+      image: (fp.images && fp.images[0]) || fp.image_url || '/logo.png',
+      gradient: 'from-[#120a2e] via-[#1f114d] to-[#0c0f2b]'
+    })),
+    // 3. Publicidad para seguir en Instagram
+    {
+      id: 'promo-instagram',
+      type: 'social',
+      badge: '📸 COMUNIDAD OFICIAL',
+      title: '¡Síguenos en Instagram!',
+      description: 'Conoce nuevos lanzamientos, sorteos exclusivos y unboxings de productos en @omniverse_store01.',
+      btnText: 'Ir a Instagram',
+      link: instagramUrl,
+      gradient: 'from-[#3a0b22] via-[#24135e] to-[#0c0f2b]'
+    },
+    // 4. Publicidad para seguir en Facebook
+    {
+      id: 'promo-facebook',
+      type: 'social',
+      badge: '👍 REDES SOCIALES',
+      title: 'Únete a nuestra página de Facebook',
+      description: 'Entérate de promociones de temporada, reseñas de clientes y novedades en tecnología y accesorios.',
+      btnText: 'Seguir en Facebook',
+      link: facebookUrl,
+      gradient: 'from-[#0b1c3a] via-[#161f52] to-[#200d3d]'
+    }
+  ];
+
+  // Auto-rotación del carrusel cada 6 segundos
   useEffect(() => {
+    if (bannerSlides.length <= 1) return;
     const timer = setInterval(() => {
       setCurrentSlide((prev) => (prev + 1) % bannerSlides.length);
     }, 6000);
@@ -188,7 +207,6 @@ export default function Home() {
     { name: 'Iluminación', icon: '💡' },
   ];
 
-  // FILTRADO DE PRODUCTOS (SOLO PRODUCTOS ACTIVOS)
   const filteredProducts = products.filter((product) => {
     const matchesSearch =
       product.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -205,7 +223,6 @@ export default function Home() {
     if (cart.length === 0 || isSubmittingOrder) return;
 
     setIsSubmittingOrder(true);
-
     const itemsPayload = cart.map((c) => ({
       id: c.id,
       title: c.title,
@@ -286,7 +303,7 @@ export default function Home() {
       ]);
 
       if (error) {
-        setAuthMsg({ type: 'error', text: `Error al registrar: ${error.message}` });
+        setAuthMsg({ type: 'error', text: `Error: ${error.message}` });
       } else {
         setAuthMsg({ type: 'ok', text: '¡Registro exitoso! Ya haces parte de la comunidad Omniverse Store.' });
         setTimeout(() => {
@@ -313,7 +330,6 @@ export default function Home() {
       />
       <div className="fixed inset-0 pointer-events-none z-0 bg-gradient-to-b from-[#060814]/75 via-transparent to-[#060814]/90" />
 
-      {/* CONTENIDO */}
       <div className="relative z-10 flex flex-col min-h-screen">
 
         {/* 1. BARRA SUPERIOR */}
@@ -401,10 +417,12 @@ export default function Home() {
           </div>
         </header>
 
-        {/* 2. CONTENIDO PRINCIPAL */}
+        {/* 2. BANNER Y CANALES */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 w-full flex-1">
           
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-8">
+            
+            {/* BANNER ROTATIVO (CON bener001.png, PRODUCTOS DESTACADOS Y PUBLICIDAD INSTAGRAM/FACEBOOK) */}
             <div className="lg:col-span-3 rounded-[32px] overflow-hidden border border-purple-500/40 shadow-[0_0_35px_rgba(147,51,234,0.35)] relative bg-[#0e0c24] h-[260px] sm:h-[300px] flex items-center group">
               <div 
                 className="w-full h-full transition-transform duration-700 ease-in-out flex flex-col"
@@ -412,17 +430,58 @@ export default function Home() {
               >
                 {bannerSlides.map((slide) => (
                   <div key={slide.id} className="w-full h-full shrink-0 relative flex items-center justify-center">
-                    {slide.type === 'image' ? (
+                    
+                    {/* Caso A: Imagen de fondo bener001.png */}
+                    {slide.type === 'image' && (
                       <Image
-                        src={slide.src || '/banner.png'}
+                        src={slide.src || '/bener001.png'}
                         alt={slide.alt || 'Banner'}
                         fill
                         priority
                         className="object-cover rounded-[32px]"
                       />
-                    ) : (
+                    )}
+
+                    {/* Caso B: Producto Destacado desde el Panel de Administración */}
+                    {slide.type === 'product' && slide.product && (
+                      <div className={`w-full h-full bg-gradient-to-r ${slide.gradient} p-6 sm:p-10 flex items-center justify-between rounded-[32px] border border-purple-500/20 relative overflow-hidden`}>
+                        <div className="flex-1 pr-4 z-10">
+                          <span className="inline-block bg-amber-500/25 border border-amber-400/40 text-amber-200 text-[10px] sm:text-[11px] font-bold px-3 py-1 rounded-full mb-2 tracking-wide">
+                            {slide.badge}
+                          </span>
+                          <h2 className="text-xl sm:text-3xl font-black text-white mb-1 line-clamp-1">
+                            {slide.title}
+                          </h2>
+                          <div className="text-xl sm:text-2xl font-black text-emerald-400 mb-2">
+                            ${Number(slide.price).toLocaleString('es-CO')} COP
+                          </div>
+                          <p className="text-slate-300 text-xs sm:text-sm max-w-md mb-4 line-clamp-2">
+                            {slide.description}
+                          </p>
+                          <button
+                            onClick={() => {
+                              setSelectedProduct(slide.product);
+                              setActiveImageIndex(0);
+                            }}
+                            className="inline-block bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-400 hover:to-purple-500 text-white font-semibold text-xs sm:text-sm px-6 py-2.5 rounded-full transition shadow-lg shadow-purple-900/50 active:scale-95 cursor-pointer"
+                          >
+                            Ver Producto & Comprar 🛒
+                          </button>
+                        </div>
+                        <div className="w-32 h-32 sm:w-48 sm:h-48 rounded-2xl overflow-hidden border border-purple-500/30 bg-[#0d122b] shadow-xl shrink-0 hidden sm:block">
+                          <img
+                            src={slide.image}
+                            alt={slide.title}
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Caso C: Publicidad Social (Instagram / Facebook) */}
+                    {slide.type === 'social' && (
                       <div className={`w-full h-full bg-gradient-to-r ${slide.gradient} p-8 sm:p-12 flex flex-col justify-center rounded-[32px] border border-purple-500/20 relative overflow-hidden`}>
-                        <div className="absolute right-6 top-6 text-6xl opacity-20 pointer-events-none">✨</div>
+                        <div className="absolute right-8 top-8 text-6xl opacity-20 pointer-events-none">✨</div>
                         <span className="inline-block bg-purple-500/25 border border-purple-400/40 text-purple-200 text-[11px] font-bold px-3 py-1 rounded-full w-max mb-3 tracking-wide">
                           {slide.badge}
                         </span>
@@ -434,29 +493,33 @@ export default function Home() {
                         </p>
                         <div>
                           <a
-                            href="#catalogo"
-                            className="inline-block bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-400 hover:to-purple-500 text-white font-semibold text-xs sm:text-sm px-6 py-2.5 rounded-full transition shadow-lg shadow-purple-900/50 active:scale-95"
+                            href={slide.link}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-block bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500 text-white font-semibold text-xs sm:text-sm px-6 py-2.5 rounded-full transition shadow-lg shadow-purple-900/50 active:scale-95"
                           >
-                            {slide.btnText}
+                            {slide.btnText} ➜
                           </a>
                         </div>
                       </div>
                     )}
+
                   </div>
                 ))}
               </div>
 
+              {/* Controles del Carrusel */}
               <div className="absolute right-4 top-1/2 -translate-y-1/2 flex flex-col gap-2 z-20 opacity-80 group-hover:opacity-100 transition-opacity">
                 <button
                   onClick={() => setCurrentSlide((prev) => (prev - 1 + bannerSlides.length) % bannerSlides.length)}
-                  className="w-8 h-8 rounded-full bg-black/60 hover:bg-purple-600 border border-purple-500/40 text-white flex items-center justify-center text-xs backdrop-blur-md transition-all shadow-md active:scale-90"
+                  className="w-8 h-8 rounded-full bg-black/60 hover:bg-purple-600 border border-purple-500/40 text-white flex items-center justify-center text-xs backdrop-blur-md transition-all shadow-md active:scale-90 cursor-pointer"
                   title="Anterior"
                 >
                   ▲
                 </button>
                 <button
                   onClick={() => setCurrentSlide((prev) => (prev + 1) % bannerSlides.length)}
-                  className="w-8 h-8 rounded-full bg-black/60 hover:bg-purple-600 border border-purple-500/40 text-white flex items-center justify-center text-xs backdrop-blur-md transition-all shadow-md active:scale-90"
+                  className="w-8 h-8 rounded-full bg-black/60 hover:bg-purple-600 border border-purple-500/40 text-white flex items-center justify-center text-xs backdrop-blur-md transition-all shadow-md active:scale-90 cursor-pointer"
                   title="Siguiente"
                 >
                   ▼
@@ -468,7 +531,7 @@ export default function Home() {
                   <button
                     key={idx}
                     onClick={() => setCurrentSlide(idx)}
-                    className={`transition-all rounded-full ${
+                    className={`transition-all rounded-full cursor-pointer ${
                       currentSlide === idx
                         ? 'w-2.5 h-6 bg-gradient-to-b from-blue-400 to-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.8)]'
                         : 'w-2.5 h-2.5 bg-white/40 hover:bg-white/80'
@@ -478,39 +541,28 @@ export default function Home() {
               </div>
             </div>
 
+            {/* TARJETA DE CANALES OFICIALES (SIN WHATSAPP, SOLO INSTAGRAM Y FACEBOOK) */}
             <div className="flex flex-col gap-3 justify-between">
               <div className="bg-[#0d122b]/90 backdrop-blur-md border border-purple-500/30 rounded-2xl p-4 shadow-xl">
                 <span className="text-[11px] font-bold text-purple-300 uppercase tracking-wider block mb-3 text-center">
-                  🌟 CANALES OFICIALES
+                  🌟 SÍGUENOS EN REDES
                 </span>
                 
                 <div className="flex flex-col gap-2.5">
                   <a
-                    href={whatsappUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600/30 to-emerald-500/10 hover:from-emerald-600 hover:to-emerald-500 border border-emerald-500/40 text-white transition-all group shadow-md"
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-7 h-7 rounded-lg bg-emerald-500 flex items-center justify-center text-sm shadow">
-                        💬
-                      </div>
-                      <span className="text-xs font-bold">WhatsApp Directo</span>
-                    </div>
-                    <span className="text-xs opacity-75 group-hover:translate-x-1 transition-transform">➜</span>
-                  </a>
-
-                  <a
                     href={instagramUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-pink-600/30 via-purple-600/20 to-orange-500/10 hover:from-pink-600 hover:via-purple-600 hover:to-orange-500 border border-pink-500/40 text-white transition-all group shadow-md"
+                    className="flex items-center justify-between px-3.5 py-3 rounded-xl bg-gradient-to-r from-pink-600/30 via-purple-600/20 to-orange-500/10 hover:from-pink-600 hover:via-purple-600 hover:to-orange-500 border border-pink-500/40 text-white transition-all group shadow-md"
                   >
                     <div className="flex items-center gap-2.5">
-                      <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-amber-500 via-rose-500 to-purple-600 flex items-center justify-center text-sm shadow">
+                      <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-amber-500 via-rose-500 to-purple-600 flex items-center justify-center text-sm shadow">
                         📷
                       </div>
-                      <span className="text-xs font-bold">Instagram</span>
+                      <div>
+                        <span className="text-xs font-bold block">Instagram</span>
+                        <span className="text-[10px] text-slate-300">@omniverse_store01</span>
+                      </div>
                     </div>
                     <span className="text-xs opacity-75 group-hover:translate-x-1 transition-transform">➜</span>
                   </a>
@@ -519,13 +571,16 @@ export default function Home() {
                     href={facebookUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-blue-700/30 to-blue-600/10 hover:from-blue-700 hover:to-blue-600 border border-blue-500/40 text-white transition-all group shadow-md"
+                    className="flex items-center justify-between px-3.5 py-3 rounded-xl bg-gradient-to-r from-blue-700/30 to-blue-600/10 hover:from-blue-700 hover:to-blue-600 border border-blue-500/40 text-white transition-all group shadow-md"
                   >
                     <div className="flex items-center gap-2.5">
-                      <div className="w-7 h-7 rounded-lg bg-blue-600 flex items-center justify-center text-sm font-bold shadow">
+                      <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-sm font-bold shadow">
                         f
                       </div>
-                      <span className="text-xs font-bold">Facebook</span>
+                      <div>
+                        <span className="text-xs font-bold block">Facebook</span>
+                        <span className="text-[10px] text-slate-300">Omniverse Store</span>
+                      </div>
                     </div>
                     <span className="text-xs opacity-75 group-hover:translate-x-1 transition-transform">➜</span>
                   </a>
@@ -552,11 +607,11 @@ export default function Home() {
                 </div>
               </div>
             </div>
+
           </div>
 
           {/* Categorías + Catálogo */}
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-8" id="catalogo">
-            
             <aside className="lg:col-span-1">
               <div className="bg-[#0d122b]/85 backdrop-blur-md border border-purple-500/25 rounded-2xl p-4 sticky top-24 shadow-xl">
                 <h3 className="text-xs font-bold text-purple-300 uppercase tracking-wider mb-4 flex items-center gap-2">
@@ -597,7 +652,6 @@ export default function Home() {
                   <p>Cargando catálogo...</p>
                 </div>
               ) : filteredProducts.length === 0 ? (
-                /* MENSAJE DE PRÓXIMAMENTE PARA CATEGORÍAS VACÍAS */
                 <div className="text-center py-16 px-6 bg-[#0d122b]/75 backdrop-blur-md rounded-3xl border border-purple-500/30 text-slate-300 shadow-xl flex flex-col items-center justify-center">
                   <div className="w-16 h-16 rounded-2xl bg-purple-500/10 border border-purple-500/30 flex items-center justify-center text-3xl mb-4 shadow-inner">
                     🚀
@@ -606,7 +660,7 @@ export default function Home() {
                     ¡Próximamente en {selectedCategory !== 'Todas' ? selectedCategory : 'nuestra tienda'}!
                   </h3>
                   <p className="text-xs text-slate-400 max-w-md mb-6 leading-relaxed">
-                    Estamos preparando nuevos ingresos y productos exclusivos para esta sección. ¡Mantente atento a nuestros lanzamientos oficiales!
+                    Estamos preparando nuevos ingresos y productos exclusivos para esta sección.
                   </p>
                   <button
                     onClick={() => setSelectedCategory('Todas')}
@@ -635,7 +689,7 @@ export default function Home() {
                           }}
                         >
                           <img
-                            src={product.image_url || 'https://via.placeholder.com/400'}
+                            src={product.image_url || (product.images && product.images[0]) || 'https://via.placeholder.com/400'}
                             alt={product.title}
                             className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 ${isOutOfStock ? 'grayscale opacity-60' : ''}`}
                           />
@@ -656,7 +710,7 @@ export default function Home() {
                               e.stopPropagation();
                               toggleFavorite(product.id);
                             }}
-                            className="absolute top-3 right-3 p-2 bg-[#060814]/70 backdrop-blur-md rounded-full text-slate-300 hover:text-pink-400 transition"
+                            className="absolute top-3 right-3 p-2 bg-[#060814]/70 backdrop-blur-md rounded-full text-slate-300 hover:text-pink-400 transition cursor-pointer"
                             title="Favorito"
                           >
                             <svg className="w-4 h-4" fill={isFav ? '#f43f5e' : 'none'} stroke={isFav ? '#f43f5e' : 'currentColor'} viewBox="0 0 24 24">
@@ -758,7 +812,7 @@ export default function Home() {
                         {selectedProduct.category || 'Tecnología'}
                       </span>
                       {selectedProduct.stock <= 2 && selectedProduct.stock > 0 && (
-                        <span className="bg-amber-500/20 text-amber-300 text-xs px-2 py-0.5 rounded-full border border-amber-500/30">
+                        <span className="bg-amber-500/20 text-amber-300 text-xs px-2.5 py-0.5 rounded-full border border-amber-500/30">
                           Quedan {selectedProduct.stock} uds
                         </span>
                       )}
@@ -797,7 +851,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* 4. DRAWER DEL CARRITO */}
+        {/* 4. DRAWER CARRITO */}
         {isCartOpen && (
           <div className="fixed inset-0 z-50 overflow-hidden">
             <div 
@@ -832,7 +886,7 @@ export default function Home() {
                           className="bg-[#121638] border border-purple-500/20 rounded-xl p-3 flex items-center gap-3"
                         >
                           <img 
-                            src={item.image_url || 'https://via.placeholder.com/100'} 
+                            src={item.image_url || (item.images && item.images[0]) || 'https://via.placeholder.com/100'} 
                             alt={item.title} 
                             className="w-14 h-14 object-cover rounded-lg bg-slate-800"
                           />
@@ -1025,7 +1079,7 @@ export default function Home() {
                     rows={2}
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
-                    placeholder="Instrucciones del timbre, referencias, etc."
+                    placeholder="Instrucciones del timbre, referencias..."
                     className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3.5 py-2 text-white focus:outline-none focus:border-purple-400 text-xs"
                   />
                 </div>
@@ -1166,7 +1220,7 @@ export default function Home() {
                       >
                         Términos y la Política de Tratamiento de Datos Personales
                       </button>{' '}
-                      para recibir información comercial y de pedidos (Ley 1581 de 2012).
+                      para recibir información comercial (Ley 1581 de 2012).
                     </label>
                   </div>
 
@@ -1197,7 +1251,7 @@ export default function Home() {
               </h3>
               <div className="text-xs text-slate-300 space-y-2.5 overflow-y-auto pr-2 leading-relaxed flex-1">
                 <p>
-                  En cumplimiento de la Ley 1581 de 2012 y el Decreto 1377 de 2013 de la República de Colombia, <strong>Omniverse Store</strong> informa que los datos personales suministrados serán tratados de manera confidencial y segura.
+                  En cumplimiento de la Ley 1581 de 2012 y el Decreto 1377 de 2013 de Colombia, <strong>Omniverse Store</strong> informa que los datos personales suministrados serán tratados de manera confidencial y segura.
                 </p>
                 <p>
                   <strong>Finalidad:</strong> Los datos se emplearán exclusivamente para:
@@ -1207,9 +1261,6 @@ export default function Home() {
                   <li>Atención al cliente y confirmación de pagos vía WhatsApp.</li>
                   <li>Envío de comunicaciones promocionales, descuentos y lanzamientos de catálogo.</li>
                 </ul>
-                <p>
-                  <strong>Derechos del Titular:</strong> Usted tiene derecho a conocer, actualizar, rectificar y revocar la autorización de sus datos personales en cualquier momento escribiendo a nuestros canales oficiales de atención.
-                </p>
               </div>
               <button
                 onClick={() => setShowTermsModal(false)}
