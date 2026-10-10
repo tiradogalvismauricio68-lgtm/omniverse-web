@@ -65,19 +65,32 @@ export default function AdminDashboard() {
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [copiedEmails, setCopiedEmails] = useState<boolean>(false);
 
-  // Estados para Crear Producto Nuevo
-  const [showAddProductModal, setShowAddProductModal] = useState<boolean>(false);
-  const [newTitle, setNewTitle] = useState('');
-  const [newCategory, setNewCategory] = useState('Tecnología');
-  const [newPrice, setNewPrice] = useState<number | ''>('');
-  const [newStock, setNewStock] = useState<number | ''>(5);
-  const [newDescription, setNewDescription] = useState('');
-  const [newFullDescription, setNewFullDescription] = useState('');
-  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-  const [isSavingProduct, setIsSavingProduct] = useState<boolean>(false);
-  const [productError, setProductError] = useState<string | null>(null);
+  // Estados: Crear Producto
+  const [showAddModal, setShowAddModal] = useState<boolean>(false);
+  const [createTitle, setCreateTitle] = useState('');
+  const [createCategory, setCreateCategory] = useState('Tecnología');
+  const [createPrice, setCreatePrice] = useState<number | ''>('');
+  const [createStock, setCreateStock] = useState<number | ''>(5);
+  const [createDescription, setCreateDescription] = useState('');
+  const [createFullDescription, setCreateFullDescription] = useState('');
+  const [createFiles, setCreateFiles] = useState<File[]>([]);
+  const [isCreating, setIsCreating] = useState<boolean>(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
-  // Verificar sesión existente
+  // Estados: Editar Producto y Reorganizar Imágenes
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editCategory, setEditCategory] = useState('Tecnología');
+  const [editPrice, setEditPrice] = useState<number | ''>('');
+  const [editStock, setEditStock] = useState<number | ''>(0);
+  const [editDescription, setEditDescription] = useState('');
+  const [editFullDescription, setEditFullDescription] = useState('');
+  const [editImages, setEditImages] = useState<string[]>([]);
+  const [editNewFiles, setEditNewFiles] = useState<File[]>([]);
+  const [isUpdating, setIsUpdating] = useState<boolean>(false);
+  const [editError, setEditError] = useState<string | null>(null);
+
+  // Comprobar sesión de administrador
   useEffect(() => {
     async function checkSession() {
       const { data: { session } } = await supabase.auth.getSession();
@@ -150,19 +163,13 @@ export default function AdminDashboard() {
     }
   }, [isAuthenticated]);
 
+  // Actualizar pedido
   const handleUpdateOrderStatus = async (orderId: string, newStatus: 'completado' | 'cancelado') => {
     setUpdatingId(orderId);
     try {
-      const { error } = await supabase
-        .from('orders')
-        .update({ status: newStatus })
-        .eq('id', orderId);
-
-      if (error) {
-        alert('Error al actualizar pedido: ' + error.message);
-      } else {
-        await fetchData();
-      }
+      const { error } = await supabase.from('orders').update({ status: newStatus }).eq('id', orderId);
+      if (error) alert('Error: ' + error.message);
+      else await fetchData();
     } catch (err: any) {
       alert('Error: ' + err?.message);
     } finally {
@@ -170,141 +177,212 @@ export default function AdminDashboard() {
     }
   };
 
+  // Visibilidad directa
   const handleToggleProductActive = async (productId: string, currentActive: boolean) => {
     try {
-      const { error } = await supabase
-        .from('products')
-        .update({ active: !currentActive })
-        .eq('id', productId);
-
-      if (error) {
-        alert('Error al modificar visibilidad: ' + error.message);
-      } else {
-        setProducts((prev) =>
-          prev.map((p) => (p.id === productId ? { ...p, active: !currentActive } : p))
-        );
+      const { error } = await supabase.from('products').update({ active: !currentActive }).eq('id', productId);
+      if (error) alert('Error: ' + error.message);
+      else {
+        setProducts((prev) => prev.map((p) => (p.id === productId ? { ...p, active: !currentActive } : p)));
       }
     } catch (err: any) {
       alert('Error: ' + err?.message);
     }
   };
 
+  // Stock rápido
   const handleUpdateStock = async (productId: string, newStock: number) => {
     if (newStock < 0) return;
     try {
-      const { error } = await supabase
-        .from('products')
-        .update({ stock: newStock })
-        .eq('id', productId);
-
-      if (error) {
-        alert('Error al actualizar stock: ' + error.message);
-      } else {
-        setProducts((prev) =>
-          prev.map((p) => (p.id === productId ? { ...p, stock: newStock } : p))
-        );
+      const { error } = await supabase.from('products').update({ stock: newStock }).eq('id', productId);
+      if (error) alert('Error: ' + error.message);
+      else {
+        setProducts((prev) => prev.map((p) => (p.id === productId ? { ...p, stock: newStock } : p)));
       }
     } catch (err: any) {
       alert('Error: ' + err?.message);
     }
   };
 
-  // ELIMINAR PRODUCTO DEFINITIVAMENTE
-  const handleDeleteProduct = async (productId: string, productTitle: string) => {
-    const confirmDelete = window.confirm(`¿Estás seguro de que deseas eliminar permanentemente "${productTitle}"? Esta acción no se puede deshacer.`);
-    if (!confirmDelete) return;
-
+  // Eliminar producto
+  const handleDeleteProduct = async (productId: string, title: string) => {
+    if (!window.confirm(`¿Estás seguro de eliminar permanentemente "${title}"?`)) return;
     try {
-      const { error } = await supabase
-        .from('products')
-        .delete()
-        .eq('id', productId);
-
-      if (error) {
-        alert('Error al eliminar producto: ' + error.message);
-      } else {
+      const { error } = await supabase.from('products').delete().eq('id', productId);
+      if (error) alert('Error: ' + error.message);
+      else {
         setProducts((prev) => prev.filter((p) => p.id !== productId));
         alert('Producto eliminado exitosamente.');
       }
     } catch (err: any) {
-      alert('Error al eliminar: ' + err?.message);
+      alert('Error: ' + err?.message);
     }
   };
 
-  // CREAR NUEVO PRODUCTO CON SUBIDA DE FOTOS A SUPABASE STORAGE
+  // Subir archivos a Storage
+  const uploadFilesToStorage = async (files: File[]): Promise<string[]> => {
+    const urls: string[] = [];
+    for (const file of files) {
+      const cleanName = `${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
+      const { error } = await supabase.storage.from('products').upload(cleanName, file, {
+        cacheControl: '3600',
+        upsert: true,
+      });
+      if (!error) {
+        const { data } = supabase.storage.from('products').getPublicUrl(cleanName);
+        if (data?.publicUrl) urls.push(data.publicUrl);
+      }
+    }
+    return urls;
+  };
+
+  // CREAR PRODUCTO
   const handleCreateProduct = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newTitle || newPrice === '' || newStock === '') {
-      setProductError('Por favor completa los campos obligatorios (Título, Precio y Stock).');
+    if (!createTitle || createPrice === '' || createStock === '') {
+      setCreateError('Por favor completa título, precio y stock.');
       return;
     }
-
-    setIsSavingProduct(true);
-    setProductError(null);
-
+    setIsCreating(true);
+    setCreateError(null);
     try {
-      const uploadedImageUrls: string[] = [];
-
-      // Subir cada foto seleccionada al Storage bucket 'products'
-      for (let i = 0; i < selectedFiles.length; i++) {
-        const file = selectedFiles[i];
-        const cleanFileName = `${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
-
-        const { error: uploadError } = await supabase.storage
-          .from('products')
-          .upload(cleanFileName, file, { cacheControl: '3600', upsert: true });
-
-        if (uploadError) {
-          console.warn('Error subiendo imagen a storage:', uploadError.message);
-        } else {
-          const { data: publicUrlData } = supabase.storage
-            .from('products')
-            .getPublicUrl(cleanFileName);
-
-          if (publicUrlData?.publicUrl) {
-            uploadedImageUrls.push(publicUrlData.publicUrl);
-          }
-        }
-      }
-
-      // Si no subió foto, colocamos una imagen genérica por defecto
-      const finalMainImage = uploadedImageUrls.length > 0 ? uploadedImageUrls[0] : '/logo.png';
-      const finalImagesList = uploadedImageUrls.length > 0 ? uploadedImageUrls : [finalMainImage];
+      const uploadedUrls = await uploadFilesToStorage(createFiles);
+      const mainImg = uploadedUrls.length > 0 ? uploadedUrls[0] : '/logo.png';
+      const imagesList = uploadedUrls.length > 0 ? uploadedUrls : [mainImg];
 
       const { data, error } = await supabase.from('products').insert([
         {
-          title: newTitle,
-          category: newCategory,
-          price: Number(newPrice),
-          stock: Number(newStock),
-          description: newDescription,
-          full_description: newFullDescription || newDescription,
-          image_url: finalMainImage,
-          images: finalImagesList,
+          title: createTitle,
+          category: createCategory,
+          price: Number(createPrice),
+          stock: Number(createStock),
+          description: createDescription,
+          full_description: createFullDescription || createDescription,
+          image_url: mainImg,
+          images: imagesList,
           active: true,
         },
       ]).select();
 
-      if (error) {
-        setProductError('Error al crear producto: ' + error.message);
-      } else {
-        if (data && data.length > 0) {
-          setProducts((prev) => [data[0] as Product, ...prev]);
-        }
-        setShowAddProductModal(false);
-        setNewTitle('');
-        setNewCategory('Tecnología');
-        setNewPrice('');
-        setNewStock(5);
-        setNewDescription('');
-        setNewFullDescription('');
-        setSelectedFiles([]);
-        alert('¡Producto agregado exitosamente al catálogo!');
+      if (error) setCreateError(error.message);
+      else {
+        if (data) setProducts((prev) => [data[0] as Product, ...prev]);
+        setShowAddModal(false);
+        setCreateTitle('');
+        setCreatePrice('');
+        setCreateStock(5);
+        setCreateDescription('');
+        setCreateFullDescription('');
+        setCreateFiles([]);
+        alert('¡Producto creado exitosamente!');
       }
     } catch (err: any) {
-      setProductError('Error: ' + err?.message);
+      setCreateError(err?.message || 'Error al crear');
     } finally {
-      setIsSavingProduct(false);
+      setIsCreating(false);
+    }
+  };
+
+  // INICIAR EDICIÓN DE UN PRODUCTO
+  const startEditProduct = (prod: Product) => {
+    setEditingProduct(prod);
+    setEditTitle(prod.title);
+    setEditCategory(prod.category || 'Tecnología');
+    setEditPrice(prod.price);
+    setEditStock(prod.stock);
+    setEditDescription(prod.description || '');
+    setEditFullDescription(prod.full_description || prod.description || '');
+    
+    // Normalizar lista de imágenes existentes
+    const existingImgs = prod.images && prod.images.length > 0
+      ? prod.images
+      : (prod.image_url ? [prod.image_url] : []);
+    setEditImages([...existingImgs]);
+    setEditNewFiles([]);
+    setEditError(null);
+  };
+
+  // MOVER IMAGEN A LA IZQUIERDA (SUBIR PRIORIDAD)
+  const moveImageLeft = (index: number) => {
+    if (index === 0) return;
+    setEditImages((prev) => {
+      const copy = [...prev];
+      const temp = copy[index - 1];
+      copy[index - 1] = copy[index];
+      copy[index] = temp;
+      return copy;
+    });
+  };
+
+  // MOVER IMAGEN A LA DERECHA (BAJAR PRIORIDAD)
+  const moveImageRight = (index: number) => {
+    if (index === editImages.length - 1) return;
+    setEditImages((prev) => {
+      const copy = [...prev];
+      const temp = copy[index + 1];
+      copy[index + 1] = copy[index];
+      copy[index] = temp;
+      return copy;
+    });
+  };
+
+  // REMOVER IMAGEN ESPECÍFICA
+  const removeImageAt = (index: number) => {
+    setEditImages((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  // GUARDAR EDICIÓN DE PRODUCTO
+  const handleSaveEditProduct = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingProduct) return;
+    if (!editTitle || editPrice === '' || editStock === '') {
+      setEditError('Título, precio y stock son obligatorios.');
+      return;
+    }
+
+    setIsUpdating(true);
+    setEditError(null);
+
+    try {
+      // Subir fotos adicionales si seleccionó nuevas
+      let newlyUploadedUrls: string[] = [];
+      if (editNewFiles.length > 0) {
+        newlyUploadedUrls = await uploadFilesToStorage(editNewFiles);
+      }
+
+      const finalImages = [...editImages, ...newlyUploadedUrls];
+      const finalMainImage = finalImages.length > 0 ? finalImages[0] : '/logo.png';
+
+      const { data, error } = await supabase
+        .from('products')
+        .update({
+          title: editTitle,
+          category: editCategory,
+          price: Number(editPrice),
+          stock: Number(editStock),
+          description: editDescription,
+          full_description: editFullDescription || editDescription,
+          image_url: finalMainImage,
+          images: finalImages.length > 0 ? finalImages : [finalMainImage],
+        })
+        .eq('id', editingProduct.id)
+        .select();
+
+      if (error) {
+        setEditError('Error al actualizar: ' + error.message);
+      } else {
+        if (data && data.length > 0) {
+          setProducts((prev) =>
+            prev.map((p) => (p.id === editingProduct.id ? (data[0] as Product) : p))
+          );
+        }
+        setEditingProduct(null);
+        alert('¡Producto y orden de imágenes actualizados exitosamente!');
+      }
+    } catch (err: any) {
+      setEditError(err?.message || 'Error guardando cambios');
+    } finally {
+      setIsUpdating(false);
     }
   };
 
@@ -323,6 +401,7 @@ export default function AdminDashboard() {
     );
   }
 
+  // PANTALLA LOGIN
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-[#060814] flex items-center justify-center p-4">
@@ -396,6 +475,7 @@ export default function AdminDashboard() {
 
   return (
     <div className="min-h-screen bg-[#060814] text-slate-100 flex flex-col font-sans">
+      {/* HEADER */}
       <header className="sticky top-0 z-30 bg-[#0d122b]/90 backdrop-blur-md border-b border-purple-500/20 px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <span className="text-xl">⚙️</span>
@@ -427,6 +507,7 @@ export default function AdminDashboard() {
         </div>
       </header>
 
+      {/* PESTAÑAS */}
       <div className="bg-[#0b0e24] border-b border-purple-500/20 px-6">
         <div className="max-w-7xl mx-auto flex gap-2 overflow-x-auto py-2.5">
           <button
@@ -490,6 +571,7 @@ export default function AdminDashboard() {
           </div>
         ) : (
           <>
+            {/* ALERTA STOCK */}
             {lowStockProducts.length > 0 && (
               <div className="mb-6 bg-rose-950/40 border border-rose-500/50 rounded-2xl p-4 shadow-lg">
                 <div className="flex items-center gap-2 mb-2 text-rose-300 font-bold text-sm">
@@ -517,41 +599,31 @@ export default function AdminDashboard() {
               </div>
             )}
 
-            {/* TAB: DASHBOARD */}
+            {/* TAB DASHBOARD */}
             {activeTab === 'dashboard' && (
               <div className="space-y-6">
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                   <div className="bg-[#0d122b] border border-purple-500/30 rounded-2xl p-5 shadow-lg">
                     <p className="text-xs text-slate-400 font-semibold mb-1">Total Recaudado (Ventas)</p>
-                    <p className="text-2xl font-black text-emerald-400">
-                      ${totalRevenue.toLocaleString('es-CO')} COP
-                    </p>
-                    <p className="text-[11px] text-slate-500 mt-2">
-                      De {completedOrders.length} pedido(s) completado(s)
-                    </p>
+                    <p className="text-2xl font-black text-emerald-400">${totalRevenue.toLocaleString('es-CO')} COP</p>
+                    <p className="text-[11px] text-slate-500 mt-2">De {completedOrders.length} pedido(s) completado(s)</p>
                   </div>
 
                   <div className="bg-[#0d122b] border border-purple-500/30 rounded-2xl p-5 shadow-lg">
                     <p className="text-xs text-slate-400 font-semibold mb-1">Pedidos Pendientes</p>
-                    <p className="text-2xl font-black text-amber-400">
-                      {pendingOrders.length}
-                    </p>
+                    <p className="text-2xl font-black text-amber-400">{pendingOrders.length}</p>
                     <p className="text-[11px] text-slate-500 mt-2">Requieren verificación de pago</p>
                   </div>
 
                   <div className="bg-[#0d122b] border border-purple-500/30 rounded-2xl p-5 shadow-lg">
                     <p className="text-xs text-slate-400 font-semibold mb-1">Unidades Despachadas</p>
-                    <p className="text-2xl font-black text-purple-300">
-                      {totalUnitsSold}
-                    </p>
+                    <p className="text-2xl font-black text-purple-300">{totalUnitsSold}</p>
                     <p className="text-[11px] text-slate-500 mt-2">Artículos vendidos exitosamente</p>
                   </div>
 
                   <div className="bg-[#0d122b] border border-purple-500/30 rounded-2xl p-5 shadow-lg">
                     <p className="text-xs text-slate-400 font-semibold mb-1">Clientes Registrados</p>
-                    <p className="text-2xl font-black text-blue-400">
-                      {profiles.length}
-                    </p>
+                    <p className="text-2xl font-black text-blue-400">{profiles.length}</p>
                     <p className="text-[11px] text-slate-500 mt-2">Con consentimiento Habeas Data</p>
                   </div>
                 </div>
@@ -605,7 +677,7 @@ export default function AdminDashboard() {
               </div>
             )}
 
-            {/* TAB: PEDIDOS */}
+            {/* TAB PEDIDOS */}
             {activeTab === 'orders' && (
               <div className="space-y-4">
                 <h3 className="text-sm font-bold text-white mb-2">Historial Completo de Pedidos</h3>
@@ -689,18 +761,17 @@ export default function AdminDashboard() {
               </div>
             )}
 
-            {/* TAB: INVENTARIO CON BOTÓN AGREGAR Y ELIMINAR */}
+            {/* TAB INVENTARIO */}
             {activeTab === 'inventory' && (
               <div className="space-y-4">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-2">
                   <div>
-                    <h3 className="text-sm font-bold text-white">Control de Stock y Visibilidad</h3>
+                    <h3 className="text-sm font-bold text-white">Control de Stock, Precios y Catálogo</h3>
                     <p className="text-xs text-slate-400">{products.length} producto(s) en inventario</p>
                   </div>
                   
-                  {/* BOTÓN PARA ABRIR FORMULARIO DE AGREGAR PRODUCTO */}
                   <button
-                    onClick={() => { setShowAddProductModal(true); setProductError(null); }}
+                    onClick={() => { setShowAddModal(true); setCreateError(null); }}
                     className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition shadow-lg shadow-purple-900/40 flex items-center gap-2 active:scale-95 cursor-pointer"
                   >
                     <span>➕</span>
@@ -715,13 +786,25 @@ export default function AdminDashboard() {
                       className="bg-[#0d122b] border border-purple-500/25 rounded-2xl p-5 shadow-lg flex flex-col justify-between"
                     >
                       <div>
-                        <div className="flex justify-between items-start gap-2 mb-2">
-                          <h4 className="text-sm font-bold text-white line-clamp-1">{prod.title}</h4>
-                          <span className="text-[10px] bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded-full border border-purple-500/30">
-                            {prod.category || 'General'}
-                          </span>
+                        {/* Imagen principal y Badge */}
+                        <div className="flex items-center gap-3 mb-3">
+                          <img
+                            src={prod.image_url || (prod.images && prod.images[0]) || '/logo.png'}
+                            alt={prod.title}
+                            className="w-14 h-14 object-cover rounded-xl bg-slate-800 border border-purple-500/30"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <span className="text-[10px] bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded-full border border-purple-500/30">
+                              {prod.category || 'General'}
+                            </span>
+                            <h4 className="text-sm font-bold text-white truncate mt-1">{prod.title}</h4>
+                            <p className="text-xs text-slate-400">
+                              {prod.images ? `${prod.images.length} fotos` : '1 foto'}
+                            </p>
+                          </div>
                         </div>
-                        <p className="text-base font-black text-purple-300 mb-3">
+
+                        <p className="text-lg font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-300 mb-3">
                           ${Number(prod.price).toLocaleString('es-CO')} COP
                         </p>
                       </div>
@@ -729,7 +812,7 @@ export default function AdminDashboard() {
                       <div className="space-y-3 pt-3 border-t border-purple-500/20">
                         {/* Control de Stock */}
                         <div className="flex items-center justify-between">
-                          <span className="text-xs text-slate-300">Unidades en Stock:</span>
+                          <span className="text-xs text-slate-300">Stock:</span>
                           <div className="flex items-center gap-2">
                             <button
                               onClick={() => handleUpdateStock(prod.id, prod.stock - 1)}
@@ -752,26 +835,33 @@ export default function AdminDashboard() {
                           </div>
                         </div>
 
-                        {/* Visibilidad y Botón Eliminar */}
-                        <div className="flex items-center justify-between pt-1">
+                        {/* Botones de acción: Editar, Visibilidad, Eliminar */}
+                        <div className="flex items-center justify-between pt-1 gap-2">
+                          <button
+                            onClick={() => startEditProduct(prod)}
+                            className="bg-blue-600/30 hover:bg-blue-600/60 text-blue-200 border border-blue-500/40 px-3 py-1.5 rounded-xl text-xs font-semibold transition flex items-center gap-1 cursor-pointer"
+                          >
+                            <span>✏️</span>
+                            <span>Editar</span>
+                          </button>
+
                           <button
                             onClick={() => handleToggleProductActive(prod.id, prod.active !== false)}
-                            className={`px-3 py-1 rounded-full text-xs font-bold transition cursor-pointer ${
+                            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer ${
                               prod.active !== false
                                 ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
                                 : 'bg-slate-800 text-slate-400 border border-slate-700'
                             }`}
                           >
-                            {prod.active !== false ? '✓ Habilitado' : '✕ Oculto'}
+                            {prod.active !== false ? '✓ Activo' : '✕ Oculto'}
                           </button>
 
                           <button
                             onClick={() => handleDeleteProduct(prod.id, prod.title)}
-                            className="text-xs text-red-400 hover:text-red-300 bg-red-950/30 hover:bg-red-900/50 border border-red-500/30 px-3 py-1 rounded-full transition flex items-center gap-1 cursor-pointer"
-                            title="Eliminar producto permanentemente"
+                            className="text-xs text-red-400 hover:text-red-300 bg-red-950/30 hover:bg-red-900/50 border border-red-500/30 px-3 py-1.5 rounded-xl transition flex items-center gap-1 cursor-pointer"
+                            title="Eliminar producto"
                           >
                             <span>🗑️</span>
-                            <span>Eliminar</span>
                           </button>
                         </div>
                       </div>
@@ -781,15 +871,13 @@ export default function AdminDashboard() {
               </div>
             )}
 
-            {/* TAB: CLIENTES */}
+            {/* TAB CLIENTES */}
             {activeTab === 'customers' && (
               <div className="space-y-4">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-2">
                   <div>
                     <h3 className="text-sm font-bold text-white">Base de Clientes Registrados</h3>
-                    <p className="text-xs text-slate-400">
-                      Usuarios con consentimiento Habeas Data (Ley 1581 de 2012).
-                    </p>
+                    <p className="text-xs text-slate-400">Usuarios con consentimiento Habeas Data (Ley 1581 de 2012).</p>
                   </div>
                   <button
                     onClick={handleCopyEmails}
@@ -844,12 +932,224 @@ export default function AdminDashboard() {
         )}
       </main>
 
-      {/* MODAL PARA AGREGAR NUEVO PRODUCTO */}
-      {showAddProductModal && (
+      {/* MODAL 1: EDITAR PRODUCTO Y ORGANIZADOR DE FOTOS */}
+      {editingProduct && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-[#0d122b] border border-purple-500/40 rounded-3xl max-w-2xl w-full p-6 sm:p-8 relative shadow-2xl my-8 max-h-[92vh] flex flex-col">
+            <button
+              onClick={() => setEditingProduct(null)}
+              className="absolute top-5 right-5 text-slate-400 hover:text-white text-lg cursor-pointer"
+            >
+              ✕
+            </button>
+
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-2xl">✏️</span>
+              <h3 className="text-lg font-bold text-white">Editar Producto y Galería</h3>
+            </div>
+            <p className="text-xs text-slate-400 mb-4">
+              Modifica precios, descripciones y acomoda el orden de las fotos arrastrando o moviendo con las flechas.
+            </p>
+
+            {editError && (
+              <div className="bg-red-500/20 border border-red-500/40 text-red-300 text-xs p-3 rounded-xl mb-4 font-semibold">
+                {editError}
+              </div>
+            )}
+
+            <form onSubmit={handleSaveEditProduct} className="space-y-4 text-xs overflow-y-auto pr-1 flex-1">
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">Título del Producto *</label>
+                <input
+                  type="text"
+                  required
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:border-purple-400 text-sm"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-slate-300 font-semibold mb-1">Categoría</label>
+                  <select
+                    value={editCategory}
+                    onChange={(e) => setEditCategory(e.target.value)}
+                    className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-purple-400 text-xs cursor-pointer"
+                  >
+                    <option value="Tecnología">Tecnología</option>
+                    <option value="Motos">Motos</option>
+                    <option value="Hogar">Hogar</option>
+                    <option value="Accesorios">Accesorios</option>
+                    <option value="Iluminación">Iluminación</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-slate-300 font-semibold mb-1">Precio Actual (COP) *</label>
+                  <input
+                    type="number"
+                    required
+                    value={editPrice}
+                    onChange={(e) => setEditPrice(e.target.value === '' ? '' : Number(e.target.value))}
+                    className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-purple-400 text-xs font-bold text-emerald-400"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-300 font-semibold mb-1">Stock de Unidades *</label>
+                  <input
+                    type="number"
+                    required
+                    value={editStock}
+                    onChange={(e) => setEditStock(e.target.value === '' ? '' : Number(e.target.value))}
+                    className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-purple-400 text-xs font-bold"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">Descripción Breve (Catálogo)</label>
+                <textarea
+                  rows={2}
+                  value={editDescription}
+                  onChange={(e) => setEditDescription(e.target.value)}
+                  className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3.5 py-2 text-white focus:outline-none focus:border-purple-400 text-xs"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">Descripción Detallada (Ventana modal)</label>
+                <textarea
+                  rows={4}
+                  value={editFullDescription}
+                  onChange={(e) => setEditFullDescription(e.target.value)}
+                  className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3.5 py-2 text-white focus:outline-none focus:border-purple-400 text-xs"
+                />
+              </div>
+
+              {/* SECCIÓN ORGANIZADORA DE IMÁGENES */}
+              <div className="bg-[#141a38] border border-purple-500/30 rounded-2xl p-4">
+                <div className="flex justify-between items-center mb-2">
+                  <div>
+                    <label className="block text-white font-bold text-xs">
+                      🖼️ Organizador de Galería e Imagen de Portada
+                    </label>
+                    <p className="text-[11px] text-slate-400">
+                      La <strong>Foto #1</strong> es la portada que se muestra en el catálogo. Usa las flechas para ordenar.
+                    </p>
+                  </div>
+                  <span className="text-xs text-purple-300 font-semibold">{editImages.length} fotos</span>
+                </div>
+
+                {editImages.length === 0 ? (
+                  <p className="text-xs text-amber-300 py-3">Este producto no tiene fotos cargadas actualmente.</p>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 my-3">
+                    {editImages.map((imgUrl, idx) => (
+                      <div
+                        key={idx}
+                        className={`relative rounded-xl overflow-hidden border-2 p-1 bg-[#0b0e24] flex flex-col items-center ${
+                          idx === 0 ? 'border-emerald-400 shadow-md shadow-emerald-500/20' : 'border-purple-500/30'
+                        }`}
+                      >
+                        <span className={`absolute top-2 left-2 text-[10px] font-black px-1.5 py-0.5 rounded-md z-10 ${
+                          idx === 0 ? 'bg-emerald-500 text-black' : 'bg-black/70 text-white'
+                        }`}>
+                          {idx === 0 ? '★ Portada' : `#${idx + 1}`}
+                        </span>
+
+                        <div className="w-full h-24 rounded-lg overflow-hidden bg-slate-900 mb-2 mt-4">
+                          <img src={imgUrl} alt={`Foto ${idx}`} className="w-full h-full object-cover" />
+                        </div>
+
+                        {/* Botones para Mover izquierda/derecha y Borrar */}
+                        <div className="flex items-center justify-between w-full px-1">
+                          <button
+                            type="button"
+                            disabled={idx === 0}
+                            onClick={() => moveImageLeft(idx)}
+                            className="w-6 h-6 bg-[#1f2652] hover:bg-purple-600 disabled:opacity-30 rounded text-[11px] font-bold text-white flex items-center justify-center cursor-pointer"
+                            title="Mover antes"
+                          >
+                            ◀
+                          </button>
+                          
+                          <button
+                            type="button"
+                            onClick={() => removeImageAt(idx)}
+                            className="text-red-400 hover:text-red-300 text-xs p-1 cursor-pointer"
+                            title="Quitar foto"
+                          >
+                            ✕
+                          </button>
+
+                          <button
+                            type="button"
+                            disabled={idx === editImages.length - 1}
+                            onClick={() => moveImageRight(idx)}
+                            className="w-6 h-6 bg-[#1f2652] hover:bg-purple-600 disabled:opacity-30 rounded text-[11px] font-bold text-white flex items-center justify-center cursor-pointer"
+                            title="Mover después"
+                          >
+                            ▶
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Subir fotos adicionales al producto en edición */}
+                <div className="mt-3 pt-3 border-t border-purple-500/20">
+                  <label className="block text-slate-300 font-semibold mb-1">
+                    ➕ Añadir más fotos al producto
+                  </label>
+                  <input
+                    type="file"
+                    multiple
+                    accept="image/*"
+                    onChange={(e) => {
+                      if (e.target.files) {
+                        setEditNewFiles(Array.from(e.target.files));
+                      }
+                    }}
+                    className="w-full text-xs text-slate-400 file:mr-4 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-purple-600/30 file:text-purple-200 hover:file:bg-purple-600/50 cursor-pointer bg-[#0b0e24] p-2 rounded-xl border border-purple-500/30"
+                  />
+                  {editNewFiles.length > 0 && (
+                    <p className="text-[11px] text-emerald-300 mt-1">
+                      + {editNewFiles.length} foto(s) nuevas listas para sumarse a la galería.
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <div className="pt-2">
+                <button
+                  type="submit"
+                  disabled={isUpdating}
+                  className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-bold py-3.5 rounded-xl transition shadow-lg shadow-purple-900/40 text-sm active:scale-95 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
+                >
+                  {isUpdating ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      <span>Guardando cambios y organizando fotos...</span>
+                    </>
+                  ) : (
+                    <span>Guardar Cambios del Producto</span>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 2: CREAR NUEVO PRODUCTO */}
+      {showAddModal && (
         <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
           <div className="bg-[#0d122b] border border-purple-500/40 rounded-3xl max-w-xl w-full p-6 sm:p-8 relative shadow-2xl my-8 max-h-[90vh] flex flex-col">
             <button
-              onClick={() => setShowAddProductModal(false)}
+              onClick={() => setShowAddModal(false)}
               className="absolute top-5 right-5 text-slate-400 hover:text-white text-lg cursor-pointer"
             >
               ✕
@@ -863,9 +1163,9 @@ export default function AdminDashboard() {
               Completa los datos del producto y sube sus fotos para publicarlo en la tienda.
             </p>
 
-            {productError && (
+            {createError && (
               <div className="bg-red-500/20 border border-red-500/40 text-red-300 text-xs p-3 rounded-xl mb-4 font-semibold">
-                {productError}
+                {createError}
               </div>
             )}
 
@@ -875,8 +1175,8 @@ export default function AdminDashboard() {
                 <input
                   type="text"
                   required
-                  value={newTitle}
-                  onChange={(e) => setNewTitle(e.target.value)}
+                  value={createTitle}
+                  onChange={(e) => setCreateTitle(e.target.value)}
                   placeholder="Ej. Intercomunicador Casco Bluetooth Pro"
                   className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:border-purple-400 text-sm"
                 />
@@ -886,8 +1186,8 @@ export default function AdminDashboard() {
                 <div>
                   <label className="block text-slate-300 font-semibold mb-1">Categoría</label>
                   <select
-                    value={newCategory}
-                    onChange={(e) => setNewCategory(e.target.value)}
+                    value={createCategory}
+                    onChange={(e) => setCreateCategory(e.target.value)}
                     className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-purple-400 text-xs cursor-pointer"
                   >
                     <option value="Tecnología">Tecnología</option>
@@ -903,10 +1203,10 @@ export default function AdminDashboard() {
                   <input
                     type="number"
                     required
-                    value={newPrice}
-                    onChange={(e) => setNewPrice(e.target.value === '' ? '' : Number(e.target.value))}
+                    value={createPrice}
+                    onChange={(e) => setCreatePrice(e.target.value === '' ? '' : Number(e.target.value))}
                     placeholder="Ej. 165000"
-                    className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-purple-400 text-xs"
+                    className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-purple-400 text-xs font-bold text-emerald-400"
                   />
                 </div>
 
@@ -915,37 +1215,36 @@ export default function AdminDashboard() {
                   <input
                     type="number"
                     required
-                    value={newStock}
-                    onChange={(e) => setNewStock(e.target.value === '' ? '' : Number(e.target.value))}
+                    value={createStock}
+                    onChange={(e) => setCreateStock(e.target.value === '' ? '' : Number(e.target.value))}
                     placeholder="Ej. 10"
-                    className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-purple-400 text-xs"
+                    className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-purple-400 text-xs font-bold"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-slate-300 font-semibold mb-1">Descripción Breve (Para la tarjeta)</label>
+                <label className="block text-slate-300 font-semibold mb-1">Descripción Breve (Catálogo)</label>
                 <textarea
                   rows={2}
-                  value={newDescription}
-                  onChange={(e) => setNewDescription(e.target.value)}
-                  placeholder="Resumen de 1 o 2 líneas que se verá en el catálogo principal..."
+                  value={createDescription}
+                  onChange={(e) => setCreateDescription(e.target.value)}
+                  placeholder="Resumen de 1 o 2 líneas..."
                   className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3.5 py-2 text-white focus:outline-none focus:border-purple-400 text-xs"
                 />
               </div>
 
               <div>
-                <label className="block text-slate-300 font-semibold mb-1">Descripción Completa (Para la ventana de detalles)</label>
+                <label className="block text-slate-300 font-semibold mb-1">Descripción Detallada (Ventana modal)</label>
                 <textarea
                   rows={4}
-                  value={newFullDescription}
-                  onChange={(e) => setNewFullDescription(e.target.value)}
-                  placeholder="Especificaciones completas, características principales, garantía..."
+                  value={createFullDescription}
+                  onChange={(e) => setCreateFullDescription(e.target.value)}
+                  placeholder="Especificaciones completas, características principales..."
                   className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3.5 py-2 text-white focus:outline-none focus:border-purple-400 text-xs"
                 />
               </div>
 
-              {/* CARGA DE FOTOS DE PRODUCTO */}
               <div>
                 <label className="block text-slate-300 font-semibold mb-1">
                   Fotos del Producto (hasta 4 imágenes)
@@ -956,15 +1255,14 @@ export default function AdminDashboard() {
                   accept="image/*"
                   onChange={(e) => {
                     if (e.target.files) {
-                      const filesArray = Array.from(e.target.files).slice(0, 4);
-                      setSelectedFiles(filesArray);
+                      setCreateFiles(Array.from(e.target.files).slice(0, 4));
                     }
                   }}
                   className="w-full text-xs text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-purple-600/30 file:text-purple-200 hover:file:bg-purple-600/50 cursor-pointer bg-[#141a38] p-2 rounded-xl border border-purple-500/30"
                 />
-                {selectedFiles.length > 0 && (
+                {createFiles.length > 0 && (
                   <p className="text-[11px] text-purple-300 mt-1">
-                    {selectedFiles.length} foto(s) seleccionada(s): {selectedFiles.map(f => f.name).join(', ')}
+                    {createFiles.length} foto(s) seleccionada(s)
                   </p>
                 )}
               </div>
@@ -972,10 +1270,10 @@ export default function AdminDashboard() {
               <div className="pt-2">
                 <button
                   type="submit"
-                  disabled={isSavingProduct}
+                  disabled={isCreating}
                   className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-bold py-3.5 rounded-xl transition shadow-lg shadow-purple-900/40 text-sm active:scale-95 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
                 >
-                  {isSavingProduct ? (
+                  {isCreating ? (
                     <>
                       <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                       <span>Guardando y subiendo fotos...</span>
