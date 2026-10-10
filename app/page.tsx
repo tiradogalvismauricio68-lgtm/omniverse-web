@@ -8,9 +8,11 @@ interface Product {
   id: string;
   title: string;
   description: string;
+  full_description?: string;
   price: number;
   stock: number;
   image_url: string;
+  images?: string[];
   category?: string;
 }
 
@@ -23,13 +25,15 @@ export default function Home() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [isCartOpen, setIsCartOpen] = useState<boolean>(false);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState<boolean>(false);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [activeImageIndex, setActiveImageIndex] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(true);
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('Todas');
   const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
   const [favorites, setFavorites] = useState<string[]>([]);
 
-  // Datos del formulario de envío
+  // Formulario de Checkout
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerCity, setCustomerCity] = useState('');
@@ -40,7 +44,7 @@ export default function Home() {
   const [notes, setNotes] = useState('');
 
   const defaultWhatsappMessage = encodeURIComponent(
-    "¡Hola Omniverse Store! 🚀 Vi su catálogo en la web y me gustaría recibir asesoría para hacer una compra. ¿Qué promociones y métodos de pago tienen disponibles hoy? ✨"
+    "Hola Omniverse Store, vi su catálogo web y me gustaría recibir asesoría para hacer un pedido. ¿Qué promociones tienen disponibles?"
   );
   const whatsappUrl = `https://wa.me/573057785317?text=${defaultWhatsappMessage}`;
   const instagramUrl = "https://www.instagram.com/omniverse_store01?exln=bHVjODYzbWRwNG0y&utm_source=qr";
@@ -51,9 +55,35 @@ export default function Home() {
         const { data, error } = await supabase.from('products').select('*');
         if (error) {
           console.error('Error al cargar productos:', error.message);
-        } else if (data) {
-          setProducts(data);
         }
+
+        // Producto oficial de audífonos con sus 3 imágenes y descripción completa
+        const officialAudifonos: Product = {
+          id: 'audifonos-gamer-01',
+          title: 'Audífonos Inalámbricos Gamer Pro Ultra-Light',
+          description: 'Lleva tu experiencia de juego y entretenimiento al siguiente nivel con ultra baja latencia (30 ms) y peso de 169g.',
+          full_description: `Lleva tu experiencia de juego y entretenimiento al siguiente nivel.\n\nDiseñados para largas sesiones sin fatiga, estos audífonos combinan libertad inalámbrica, máxima comodidad y rendimiento de nivel competitivo. Con un peso pluma de tan solo 169 gramos, prácticamente olvidarás que los llevas puestos.\n\nGracias a su tecnología de ultra baja latencia (30 ms), escucharás cada paso, disparo y efecto en tiempo real, dándote la ventaja que necesitas en tus partidas. Además, su versatilidad de conexión 3 en 1 (dongle USB/Tipo-C y modo inalámbrico) te permite alternar fácilmente entre PC, consolas y dispositivos móviles sin complicaciones.`,
+          price: 165000,
+          stock: 10,
+          image_url: '/audifonosgamer1.png',
+          images: [
+            '/audifonosgamer1.png',
+            '/audifonosgamer2.png',
+            '/audifonosgamer3.png',
+          ],
+          category: 'Tecnología',
+        };
+
+        let loadedProducts: Product[] = [];
+        if (data && data.length > 0) {
+          // Reemplazamos audífonos existentes si venían de la base o añadimos el oficial
+          const filtered = data.filter((p: Product) => !p.title.toLowerCase().includes('audifonos'));
+          loadedProducts = [officialAudifonos, ...filtered];
+        } else {
+          loadedProducts = [officialAudifonos];
+        }
+
+        setProducts(loadedProducts);
       } catch (err) {
         console.error('Excepción al consultar Supabase:', err);
       } finally {
@@ -64,7 +94,6 @@ export default function Home() {
     fetchProducts();
   }, []);
 
-  // Funciones del Carrito
   const addToCart = (product: Product) => {
     setCart((prev) => {
       const existing = prev.find((item) => item.id === product.id);
@@ -105,11 +134,10 @@ export default function Home() {
     );
   };
 
-  // Categorías (sin gamer)
   const categories = [
     { name: 'Todas', icon: '🗳️' },
-    { name: 'Motos', icon: '🏍️' },
     { name: 'Tecnología', icon: '🎧' },
+    { name: 'Motos', icon: '🏍️' },
     { name: 'Hogar', icon: '🏠' },
     { name: 'Accesorios', icon: '🛍️' },
     { name: 'Iluminación', icon: '💡' },
@@ -125,38 +153,37 @@ export default function Home() {
     return matchesSearch && matchesCategory;
   });
 
-  // Envío del pedido a WhatsApp con todos los datos
+  // Envío a WhatsApp con caracteres limpios sin romper formato
   const handleCheckoutSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-
     if (cart.length === 0) return;
 
-    let itemsText = cart
+    const itemsText = cart
       .map(
         (item, index) =>
           `${index + 1}. *${item.title}* x${item.quantity} - $${(item.price * item.quantity).toLocaleString('es-CO')}`
       )
       .join('\n');
 
-    let text = `🛍️ *NUEVO PEDIDO - OMNIVERSE STORE*\n\n`;
-    text += `👤 *Cliente:* ${customerName}\n`;
-    text += `📱 *Teléfono:* ${customerPhone}\n`;
-    text += `📍 *Ciudad:* ${customerCity}\n`;
-    text += `🚚 *Tipo de Entrega:* ${deliveryType === 'domicilio' ? 'Envío a Domicilio' : 'Pasa a Recoger'}\n`;
+    let msg = `*NUEVO PEDIDO - OMNIVERSE STORE*\n\n`;
+    msg += `*Cliente:* ${customerName}\n`;
+    msg += `*Teléfono:* ${customerPhone}\n`;
+    msg += `*Ciudad:* ${customerCity}\n`;
+    msg += `*Tipo de Entrega:* ${deliveryType === 'domicilio' ? 'Envío a Domicilio' : 'Pasa a Recoger'}\n`;
 
     if (deliveryType === 'domicilio') {
-      text += `🏠 *Dirección:* ${customerAddress}\n`;
-      if (customerNeighborhood) text += `📌 *Barrio:* ${customerNeighborhood}\n`;
+      msg += `*Dirección:* ${customerAddress}\n`;
+      if (customerNeighborhood) msg += `*Barrio:* ${customerNeighborhood}\n`;
     }
 
-    text += `💳 *Método de Pago:* ${paymentMethod === 'transferencia' ? 'Transferencia (Nequi / Daviplata / Bancolombia)' : 'Efectivo contra entrega'}\n`;
-    if (notes) text += `📝 *Notas:* ${notes}\n`;
+    msg += `*Método de Pago:* ${paymentMethod === 'transferencia' ? 'Transferencia (Nequi / Bancolombia)' : 'Efectivo contra entrega'}\n`;
+    if (notes) msg += `*Notas:* ${notes}\n`;
 
-    text += `\n📦 *PRODUCTOS:* \n${itemsText}\n\n`;
-    text += `💰 *TOTAL A PAGAR:* $${cartTotal.toLocaleString('es-CO')} COP\n\n`;
-    text += `Por favor confírmame disponibilidad para proceder con el pago y despacho. ¡Muchas gracias! ✨`;
+    msg += `\n*PRODUCTOS:*\n${itemsText}\n\n`;
+    msg += `*TOTAL A PAGAR:* $${cartTotal.toLocaleString('es-CO')} COP\n\n`;
+    msg += `Hola, confirmo los datos de mi pedido para coordinar el pago y envío.`;
 
-    const finalUrl = `https://wa.me/573057785317?text=${encodeURIComponent(text)}`;
+    const finalUrl = `https://api.whatsapp.com/send?phone=573057785317&text=${encodeURIComponent(msg)}`;
     window.open(finalUrl, '_blank');
 
     setIsCheckoutOpen(false);
@@ -237,7 +264,7 @@ export default function Home() {
                 )}
               </button>
 
-              {/* Botón Carrito con apertura del Drawer */}
+              {/* Botón Carrito */}
               <button 
                 onClick={() => setIsCartOpen(true)}
                 className="relative flex items-center gap-2 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white text-xs md:text-sm font-semibold px-4 py-2 rounded-xl transition-all shadow-lg shadow-purple-900/40 active:scale-95 cursor-pointer"
@@ -287,7 +314,6 @@ export default function Home() {
             {/* Insignias de Confianza & Redes */}
             <div className="flex flex-col gap-2.5 justify-between">
               
-              {/* Envíos */}
               <div className="bg-[#0d122b]/85 backdrop-blur-md border border-purple-500/25 rounded-2xl p-3.5 flex items-center gap-3 shadow-lg">
                 <div className="w-9 h-9 rounded-xl bg-blue-500/20 text-blue-400 flex items-center justify-center text-lg">
                   🛒
@@ -298,7 +324,6 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Compra Segura */}
               <div className="bg-[#0d122b]/85 backdrop-blur-md border border-purple-500/25 rounded-2xl p-3.5 flex items-center gap-3 shadow-lg">
                 <div className="w-9 h-9 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center text-lg">
                   🛡️
@@ -309,7 +334,7 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Instagram Oficial */}
+              {/* Instagram */}
               <a 
                 href={instagramUrl}
                 target="_blank"
@@ -325,7 +350,7 @@ export default function Home() {
                 </div>
               </a>
 
-              {/* WhatsApp Oficial */}
+              {/* WhatsApp */}
               <a 
                 href={whatsappUrl}
                 target="_blank"
@@ -386,12 +411,12 @@ export default function Home() {
               {loading ? (
                 <div className="text-center py-24 text-slate-400 flex flex-col items-center justify-center gap-3">
                   <div className="w-8 h-8 border-4 border-purple-500 border-t-transparent rounded-full animate-spin"></div>
-                  <p>Cargando productos de Supabase...</p>
+                  <p>Cargando catálogo...</p>
                 </div>
               ) : filteredProducts.length === 0 ? (
                 <div className="text-center py-20 bg-[#0d122b]/60 backdrop-blur-md rounded-2xl border border-purple-500/20 text-slate-400">
                   <p className="text-base font-semibold mb-1">No hay productos en esta categoría</p>
-                  <p className="text-xs">Pronto añadiremos nuevos artículos o prueba seleccionando otra categoría.</p>
+                  <p className="text-xs">Pronto añadiremos más productos.</p>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
@@ -402,15 +427,24 @@ export default function Home() {
                         key={product.id}
                         className="bg-[#0d122b]/85 backdrop-blur-md rounded-2xl overflow-hidden border border-purple-500/25 flex flex-col hover:border-purple-400/60 transition-all duration-300 shadow-xl group hover:-translate-y-1"
                       >
-                        {/* Imagen con botón de favorito */}
-                        <div className="h-52 w-full bg-[#141a38] relative overflow-hidden">
+                        {/* Imagen (clic abre detalles del producto) */}
+                        <div 
+                          className="h-56 w-full bg-[#141a38] relative overflow-hidden cursor-pointer"
+                          onClick={() => {
+                            setSelectedProduct(product);
+                            setActiveImageIndex(0);
+                          }}
+                        >
                           <img
                             src={product.image_url || 'https://via.placeholder.com/400'}
                             alt={product.title}
                             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                           />
                           <button
-                            onClick={() => toggleFavorite(product.id)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleFavorite(product.id);
+                            }}
                             className="absolute top-3 right-3 p-2 bg-[#060814]/70 backdrop-blur-md rounded-full text-slate-300 hover:text-pink-400 transition"
                             title="Favorito"
                           >
@@ -422,7 +456,13 @@ export default function Home() {
 
                         {/* Detalles */}
                         <div className="p-5 flex-1 flex flex-col justify-between">
-                          <div>
+                          <div 
+                            className="cursor-pointer"
+                            onClick={() => {
+                              setSelectedProduct(product);
+                              setActiveImageIndex(0);
+                            }}
+                          >
                             <h3 className="text-base font-bold text-white mb-1 group-hover:text-purple-300 transition-colors line-clamp-1">
                               {product.title}
                             </h3>
@@ -452,7 +492,90 @@ export default function Home() {
           </div>
         </div>
 
-        {/* 3. PANEL LATERAL DESLIZABLE (DRAWER DEL CARRITO) */}
+        {/* 3. MODAL DE VISTA DETALLADA DEL PRODUCTO (GALERÍA 3 FOTOS + DESCRIPCIÓN) */}
+        {selectedProduct && (
+          <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
+            <div className="bg-[#0b0e24] border border-purple-500/40 rounded-3xl max-w-3xl w-full p-6 sm:p-8 relative shadow-2xl my-8">
+              <button
+                onClick={() => setSelectedProduct(null)}
+                className="absolute top-5 right-5 text-slate-400 hover:text-white text-xl p-1"
+              >
+                ✕
+              </button>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start mt-2">
+                
+                {/* Galería de Imágenes */}
+                <div>
+                  <div className="h-64 sm:h-80 w-full bg-[#141a38] rounded-2xl overflow-hidden border border-purple-500/20 mb-3 shadow-lg">
+                    <img
+                      src={
+                        selectedProduct.images && selectedProduct.images.length > 0
+                          ? selectedProduct.images[activeImageIndex]
+                          : selectedProduct.image_url
+                      }
+                      alt={selectedProduct.title}
+                      className="w-full h-full object-cover transition-all duration-300"
+                    />
+                  </div>
+
+                  {/* Miniaturas */}
+                  {selectedProduct.images && selectedProduct.images.length > 1 && (
+                    <div className="flex gap-2.5 justify-center">
+                      {selectedProduct.images.map((img, idx) => (
+                        <button
+                          key={idx}
+                          onClick={() => setActiveImageIndex(idx)}
+                          className={`w-16 h-16 rounded-xl overflow-hidden border-2 transition-all cursor-pointer ${
+                            activeImageIndex === idx
+                              ? 'border-purple-400 scale-105 shadow-md shadow-purple-500/40'
+                              : 'border-purple-900/40 opacity-70 hover:opacity-100'
+                          }`}
+                        >
+                          <img src={img} alt={`Vista ${idx + 1}`} className="w-full h-full object-cover" />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Información y Compra */}
+                <div className="flex flex-col justify-between h-full">
+                  <div>
+                    <span className="inline-block bg-purple-500/20 text-purple-300 text-xs px-2.5 py-0.5 rounded-full mb-2 border border-purple-500/30">
+                      {selectedProduct.category || 'Tecnología'}
+                    </span>
+                    <h3 className="text-xl sm:text-2xl font-bold text-white mb-2 leading-snug">
+                      {selectedProduct.title}
+                    </h3>
+                    <div className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-300 mb-4">
+                      ${Number(selectedProduct.price).toLocaleString('es-CO')} COP
+                    </div>
+                    
+                    {/* Descripción completa */}
+                    <div className="text-slate-300 text-xs sm:text-sm space-y-3 whitespace-pre-line leading-relaxed max-h-56 overflow-y-auto pr-2 border-t border-b border-purple-500/20 py-3 mb-4">
+                      {selectedProduct.full_description || selectedProduct.description}
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      addToCart(selectedProduct);
+                      setSelectedProduct(null);
+                    }}
+                    className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-bold py-3.5 rounded-xl transition duration-200 shadow-xl shadow-purple-900/40 text-sm flex items-center justify-center gap-2 active:scale-95 cursor-pointer"
+                  >
+                    <span>Añadir al Carrito</span>
+                    <span>🛒</span>
+                  </button>
+                </div>
+
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 4. PANEL LATERAL DESLIZABLE (DRAWER DEL CARRITO) */}
         {isCartOpen && (
           <div className="fixed inset-0 z-50 overflow-hidden">
             <div 
@@ -497,7 +620,6 @@ export default function Home() {
                             <p className="text-xs text-purple-300 font-bold">
                               ${Number(item.price).toLocaleString('es-CO')}
                             </p>
-                            {/* Controles de cantidad */}
                             <div className="flex items-center gap-2 mt-2">
                               <button 
                                 onClick={() => updateQuantity(item.id, -1)}
@@ -527,7 +649,6 @@ export default function Home() {
                   </div>
                 </div>
 
-                {/* Subtotal y botón para ir al formulario */}
                 {cart.length > 0 && (
                   <div className="pt-4 border-t border-purple-500/20">
                     <div className="flex justify-between items-center mb-4">
@@ -553,7 +674,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* 4. MODAL / FORMULARIO DE CHECKOUT (DATOS Y ENVÍO) */}
+        {/* 5. MODAL / FORMULARIO DE CHECKOUT */}
         {isCheckoutOpen && (
           <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
             <div className="bg-[#0d122b] border border-purple-500/40 rounded-3xl max-w-lg w-full p-6 sm:p-8 relative shadow-2xl my-8">
@@ -574,7 +695,6 @@ export default function Home() {
 
               <form onSubmit={handleCheckoutSubmit} className="space-y-4 text-xs sm:text-sm">
                 
-                {/* Nombre y Teléfono */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-slate-300 font-semibold mb-1">Nombre Completo *</label>
@@ -600,7 +720,6 @@ export default function Home() {
                   </div>
                 </div>
 
-                {/* Ciudad y Tipo de entrega */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-slate-300 font-semibold mb-1">Ciudad / Municipio *</label>
@@ -626,7 +745,6 @@ export default function Home() {
                   </div>
                 </div>
 
-                {/* Dirección y Barrio si es a domicilio */}
                 {deliveryType === 'domicilio' && (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
@@ -653,7 +771,6 @@ export default function Home() {
                   </div>
                 )}
 
-                {/* Forma de Pago */}
                 <div>
                   <label className="block text-slate-300 font-semibold mb-1">Método de Pago Preferido</label>
                   <div className="grid grid-cols-2 gap-2">
@@ -682,7 +799,6 @@ export default function Home() {
                   </div>
                 </div>
 
-                {/* Notas adicionales */}
                 <div>
                   <label className="block text-slate-300 font-semibold mb-1">Notas adicionales (opcional)</label>
                   <textarea
@@ -694,7 +810,6 @@ export default function Home() {
                   />
                 </div>
 
-                {/* Resumen del Total */}
                 <div className="bg-[#121638] rounded-xl p-3 flex justify-between items-center border border-purple-500/20">
                   <span className="text-slate-300">Total a pagar:</span>
                   <span className="text-lg font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-300">
@@ -702,7 +817,6 @@ export default function Home() {
                   </span>
                 </div>
 
-                {/* Botón de Enviar a WhatsApp */}
                 <button
                   type="submit"
                   className="w-full bg-[#25D366] hover:bg-[#20ba59] text-white font-bold py-3.5 rounded-xl transition duration-200 shadow-xl shadow-emerald-900/30 text-sm flex items-center justify-center gap-2 active:scale-95 cursor-pointer"
@@ -717,7 +831,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* 5. MODAL DE CUENTA */}
+        {/* 6. MODAL CUENTA */}
         {showAuthModal && (
           <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
             <div className="bg-[#0d122b] border border-purple-500/40 rounded-2xl max-w-sm w-full p-6 relative shadow-2xl">
@@ -749,7 +863,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* 6. BOTÓN FLOTANTE WHATSAPP */}
+        {/* 7. BOTÓN FLOTANTE WHATSAPP */}
         <a
           href={whatsappUrl}
           target="_blank"
@@ -762,7 +876,7 @@ export default function Home() {
           </svg>
         </a>
 
-        {/* 7. PIE DE PÁGINA */}
+        {/* 8. PIE DE PÁGINA */}
         <footer className="border-t border-purple-900/30 bg-[#060814]/90 py-8 text-center text-xs text-slate-500 mt-12">
           <div className="flex justify-center items-center gap-4 mb-3">
             <a 
