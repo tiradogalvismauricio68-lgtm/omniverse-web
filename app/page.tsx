@@ -75,14 +75,14 @@ export default function Home() {
   return (
     <div className="relative min-h-screen text-slate-100 flex flex-col font-sans selection:bg-purple-600 selection:text-white bg-[#060814]">
       
-      {/* IMAGEN DE FONDO (fondo.png) */}
+      {/* FONDO GALÁCTICO */}
       <div 
         className="fixed inset-0 pointer-events-none z-0 bg-cover bg-center opacity-65"
         style={{ backgroundImage: "url('/fondo.png')" }}
       />
       <div className="fixed inset-0 pointer-events-none z-0 bg-gradient-to-b from-[#060814]/75 via-transparent to-[#060814]/90" />
 
-      {/* CONTENIDO PRINCIPAL */}
+      {/* CONTENIDO */}
       <div className="relative z-10 flex flex-col min-h-screen">
 
         {/* 1. BARRA SUPERIOR */}
@@ -174,53 +174,19 @@ export default function Home() {
         {/* 2. CONTENIDO PRINCIPAL */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 w-full flex-1">
           
-          {/* Fila Superior: Banner Hero + Beneficios */}
+          {/* Fila Superior: Banner Oficial + Beneficios */}
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-8">
             
-            {/* Banner Central Estilo Idéntico a la Maqueta */}
-            <div className="lg:col-span-3 bg-[#1e1346]/85 backdrop-blur-md rounded-[32px] border border-purple-500/40 p-6 sm:p-8 relative overflow-hidden flex flex-col justify-between shadow-[0_0_35px_rgba(147,51,234,0.25)] min-h-[220px]">
-              
-              {/* Resplandor de fondo */}
-              <div className="absolute top-0 right-1/4 w-48 h-48 bg-purple-500/20 rounded-full blur-3xl pointer-events-none"></div>
-
-              {/* Icono de bolsa luminosa flotando arriba */}
-              <div className="absolute top-3 left-[42%] sm:left-[38%] text-3xl sm:text-4xl opacity-90 drop-shadow-[0_0_12px_rgba(168,85,247,0.8)] pointer-events-none select-none">
-                🛍️
-              </div>
-
-              <div className="flex flex-col md:flex-row items-center gap-4 z-10">
-                {/* Logo con el infinito 3D grande a la izquierda */}
-                <div className="shrink-0 -ml-2 sm:-ml-4">
-                  <Image
-                    src="/logo.png"
-                    alt="Omniverse"
-                    width={380}
-                    height={110}
-                    priority
-                    className="h-20 sm:h-28 w-auto object-contain drop-shadow-[0_0_18px_rgba(147,51,234,0.45)]"
-                  />
-                </div>
-
-                {/* Textos descriptivos a la derecha */}
-                <div className="flex-1 text-center md:text-left mt-2 md:mt-0">
-                  <p className="text-slate-200 text-xs sm:text-sm font-medium leading-relaxed drop-shadow-sm">
-                    Productos garantizados con la mejor relación calidad-precio.
-                  </p>
-                  <p className="text-slate-300 text-xs sm:text-sm leading-relaxed">
-                    Explora nuestro catálogo y recibe directo en tu puerta.
-                  </p>
-                </div>
-              </div>
-
-              {/* Botón Ver Catálogo abajo */}
-              <div className="mt-4 md:mt-2 z-10 text-center md:text-left md:ml-12">
-                <a
-                  href="#catalogo"
-                  className="inline-block bg-gradient-to-r from-[#3b82f6] to-[#8b5cf6] hover:from-[#2563eb] hover:to-[#7c3aed] text-white font-semibold text-xs sm:text-sm px-7 py-2.5 rounded-full transition-all duration-300 shadow-[0_4px_15px_rgba(59,130,246,0.4)] active:scale-95"
-                >
-                  Ver Catálogo
-                </a>
-              </div>
+            {/* Banner Oficial Exacto de la Imagen */}
+            <div className="lg:col-span-3 rounded-[32px] overflow-hidden border border-purple-500/40 shadow-[0_0_35px_rgba(147,51,234,0.35)] relative flex items-center justify-center bg-[#0e0c24]">
+              <Image
+                src="/banner.png"
+                alt="Omniverse Store - Productos garantizados con la mejor relación calidad-precio"
+                width={1200}
+                height={400}
+                priority
+                className="w-full h-auto object-cover rounded-[32px]"
+              />
             </div>
 
             {/* Insignias de Confianza */}
@@ -248,7 +214,7 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Atención Directa (WhatsApp) */}
+              {/* Atención Directa (WhatsApp Oficial) */}
               <a 
                 href={whatsappUrl}
                 target="_blank"
@@ -267,10 +233,10 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Grilla: Sidebar Categorías + Catálogo */}
+          {/* Categorías + Catálogo */}
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-8" id="catalogo">
             
-            {/* Sidebar de Categorías */}
+            {/* Sidebar Categorías */}
             <aside className="lg:col-span-1">
               <div className="bg-[#0d122b]/85 backdrop-blur-md border border-purple-500/25 rounded-2xl p-4 sticky top-24 shadow-xl">
                 <h3 className="text-xs font-bold text-purple-300 uppercase tracking-wider mb-4 flex items-center gap-2">
@@ -375,7 +341,7 @@ export default function Home() {
           </div>
         </div>
 
-        {/* 3. BOTÓN FLOTANTE OFICIAL DE WHATSAPP */}
+        {/* 3. BOTÓN FLOTANTE WHATSAPP */}
         <a
           href={whatsappUrl}
           target="_blank"
@@ -388,7 +354,7 @@ export default function Home() {
           </svg>
         </a>
 
-        {/* 4. MODAL SIMPLE DE CUENTA */}
+        {/* 4. MODAL CUENTA */}
         {showAuthModal && (
           <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
             <div className="bg-[#0d122b] border border-purple-500/40 rounded-2xl max-w-sm w-full p-6 relative shadow-2xl">
