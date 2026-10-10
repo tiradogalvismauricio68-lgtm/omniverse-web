@@ -46,15 +46,72 @@ interface Profile {
 }
 
 export default function AdminDashboard() {
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [authChecking, setAuthChecking] = useState<boolean>(true);
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [isLoggingIn, setIsLoggingIn] = useState<boolean>(false);
+
   const [activeTab, setActiveTab] = useState<'dashboard' | 'orders' | 'inventory' | 'customers'>('dashboard');
   const [orders, setOrders] = useState<Order[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [loading, setLoading] = useState<boolean>(false);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [copiedEmails, setCopiedEmails] = useState<boolean>(false);
 
-  // Cargar datos en tiempo real
+  // Verificar sesión existente en el navegador
+  useEffect(() => {
+    async function checkSession() {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session && session.user?.email === 'tiradogalvismauricio68@gmail.com') {
+        setIsAuthenticated(true);
+      } else {
+        setIsAuthenticated(false);
+      }
+      setAuthChecking(false);
+    }
+    checkSession();
+  }, []);
+
+  // Función para procesar el inicio de sesión
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoggingIn(true);
+    setLoginError(null);
+
+    if (loginEmail.trim().toLowerCase() !== 'tiradogalvismauricio68@gmail.com') {
+      setLoginError('Acceso denegado: este correo no tiene permisos de administrador.');
+      setIsLoggingIn(false);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: loginEmail.trim().toLowerCase(),
+        password: loginPassword,
+      });
+
+      if (error) {
+        setLoginError('Credenciales incorrectas: ' + error.message);
+      } else if (data.session) {
+        setIsAuthenticated(true);
+      }
+    } catch (err: any) {
+      setLoginError(err?.message || 'Error al iniciar sesión');
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
+
+  // Cerrar sesión
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setIsAuthenticated(false);
+  };
+
+  // Cargar datos de Supabase una vez autenticado
   const fetchData = async () => {
     setLoading(true);
     try {
@@ -75,10 +132,11 @@ export default function AdminDashboard() {
   };
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    if (isAuthenticated) {
+      fetchData();
+    }
+  }, [isAuthenticated]);
 
-  // Cambiar estado de una orden (Aprobar o Cancelar)
   const handleUpdateOrderStatus = async (orderId: string, newStatus: 'completado' | 'cancelado') => {
     setUpdatingId(orderId);
     try {
@@ -93,13 +151,12 @@ export default function AdminDashboard() {
         await fetchData();
       }
     } catch (err: any) {
-      alert('Error en la operación: ' + err?.message);
+      alert('Error: ' + err?.message);
     } finally {
       setUpdatingId(null);
     }
   };
 
-  // Alternar visibilidad de un producto (Activo/Inactivo)
   const handleToggleProductActive = async (productId: string, currentActive: boolean) => {
     try {
       const { error } = await supabase
@@ -119,7 +176,6 @@ export default function AdminDashboard() {
     }
   };
 
-  // Actualizar stock de un producto
   const handleUpdateStock = async (productId: string, newStock: number) => {
     if (newStock < 0) return;
     try {
@@ -140,18 +196,83 @@ export default function AdminDashboard() {
     }
   };
 
-  // Copiar correos al portapapeles
   const handleCopyEmails = () => {
-    const emailList = profiles
-      .map((p) => p.email)
-      .filter(Boolean)
-      .join(', ');
+    const emailList = profiles.map((p) => p.email).filter(Boolean).join(', ');
     navigator.clipboard.writeText(emailList);
     setCopiedEmails(true);
     setTimeout(() => setCopiedEmails(false), 2500);
   };
 
-  // Cálculos del Dashboard
+  if (authChecking) {
+    return (
+      <div className="min-h-screen bg-[#060814] flex items-center justify-center text-slate-400">
+        <div className="w-8 h-8 border-4 border-purple-500 border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    );
+  }
+
+  // VENTANA DE LOGIN OBLIGATORIA
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-[#060814] flex items-center justify-center p-4">
+        <div className="bg-[#0d122b] border border-purple-500/40 rounded-3xl max-w-md w-full p-8 shadow-2xl relative">
+          <div className="text-center mb-6">
+            <span className="text-3xl block mb-2">🔐</span>
+            <h2 className="text-xl font-bold text-white">Acceso Administrativo</h2>
+            <p className="text-xs text-slate-400 mt-1">Omniverse Store • Exclusivo para el propietario</p>
+          </div>
+
+          {loginError && (
+            <div className="bg-red-500/20 border border-red-500/40 text-red-300 text-xs p-3 rounded-xl mb-4 font-semibold">
+              {loginError}
+            </div>
+          )}
+
+          <form onSubmit={handleLogin} className="space-y-4 text-xs">
+            <div>
+              <label className="block text-slate-300 font-semibold mb-1">Correo de Administrador</label>
+              <input
+                type="email"
+                required
+                value={loginEmail}
+                onChange={(e) => setLoginEmail(e.target.value)}
+                placeholder="tiradogalvismauricio68@gmail.com"
+                className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-purple-400 text-sm"
+              />
+            </div>
+
+            <div>
+              <label className="block text-slate-300 font-semibold mb-1">Contraseña</label>
+              <input
+                type="password"
+                required
+                value={loginPassword}
+                onChange={(e) => setLoginPassword(e.target.value)}
+                placeholder="••••••••••••"
+                className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-purple-400 text-sm"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={isLoggingIn}
+              className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-bold py-3.5 rounded-xl transition shadow-lg shadow-purple-900/40 text-sm active:scale-95 disabled:opacity-50 cursor-pointer"
+            >
+              {isLoggingIn ? 'Verificando...' : 'Entrar al Panel'}
+            </button>
+          </form>
+
+          <div className="text-center mt-6">
+            <Link href="/" className="text-xs text-purple-400 hover:underline">
+              ← Volver a la Tienda
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // MÉTRICAS Y DATOS
   const completedOrders = orders.filter((o) => o.status === 'completado');
   const pendingOrders = orders.filter((o) => o.status === 'pendiente');
   const totalRevenue = completedOrders.reduce((acc, o) => acc + Number(o.total || 0), 0);
@@ -159,8 +280,6 @@ export default function AdminDashboard() {
     if (!Array.isArray(o.items)) return acc;
     return acc + o.items.reduce((sum, item) => sum + (item.quantity || 0), 0);
   }, 0);
-
-  // Alerta de stock bajo (<= 2 unidades)
   const lowStockProducts = products.filter((p) => Number(p.stock) <= 2);
 
   return (
@@ -172,7 +291,7 @@ export default function AdminDashboard() {
           <span className="text-xl">⚙️</span>
           <div>
             <h1 className="text-base font-bold text-white leading-tight">Panel de Administración</h1>
-            <p className="text-[11px] text-purple-300">Omniverse Store • Gestión y Estadísticas</p>
+            <p className="text-[11px] text-purple-300">Sesión iniciada: tiradogalvismauricio68@gmail.com</p>
           </div>
         </div>
 
@@ -181,7 +300,7 @@ export default function AdminDashboard() {
             onClick={fetchData}
             className="text-xs bg-[#141a38] hover:bg-[#1f2652] text-slate-200 border border-purple-500/30 px-3 py-1.5 rounded-lg transition"
           >
-            🔄 Actualizar Datos
+            🔄 Actualizar
           </button>
           <Link
             href="/"
@@ -189,10 +308,16 @@ export default function AdminDashboard() {
           >
             🏪 Ver Tienda
           </Link>
+          <button
+            onClick={handleLogout}
+            className="text-xs bg-rose-900/40 hover:bg-rose-900/70 text-rose-200 border border-rose-700/40 px-3 py-1.5 rounded-lg transition"
+          >
+            Cerrar Sesión
+          </button>
         </div>
       </header>
 
-      {/* NAVEGACIÓN POR PESTAÑAS */}
+      {/* PESTAÑAS */}
       <div className="bg-[#0b0e24] border-b border-purple-500/20 px-6">
         <div className="max-w-7xl mx-auto flex gap-2 overflow-x-auto py-2.5">
           <button
@@ -243,7 +368,7 @@ export default function AdminDashboard() {
                 : 'text-slate-400 hover:text-white hover:bg-white/5'
             }`}
           >
-            👥 Clientes & Habeas Data ({profiles.length})
+            👥 Clientes ({profiles.length})
           </button>
         </div>
       </div>
@@ -253,11 +378,11 @@ export default function AdminDashboard() {
         {loading ? (
           <div className="py-20 text-center text-slate-400 flex flex-col items-center justify-center gap-3">
             <div className="w-8 h-8 border-4 border-purple-500 border-t-transparent rounded-full animate-spin"></div>
-            <p className="text-sm">Cargando información del panel...</p>
+            <p className="text-sm">Cargando datos...</p>
           </div>
         ) : (
           <>
-            {/* 1. SECCIÓN DE ALERTA DE STOCK MÍNIMO (SIEMPRE VISIBLE SI HAY PRODUCTOS CRÍTICOS) */}
+            {/* ALERTA DE STOCK */}
             {lowStockProducts.length > 0 && (
               <div className="mb-6 bg-rose-950/40 border border-rose-500/50 rounded-2xl p-4 shadow-lg">
                 <div className="flex items-center gap-2 mb-2 text-rose-300 font-bold text-sm">
@@ -285,10 +410,9 @@ export default function AdminDashboard() {
               </div>
             )}
 
-            {/* PESTAÑA: DASHBOARD */}
+            {/* TAB: DASHBOARD */}
             {activeTab === 'dashboard' && (
               <div className="space-y-6">
-                {/* TARJETAS DE MÉTRICAS */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                   <div className="bg-[#0d122b] border border-purple-500/30 rounded-2xl p-5 shadow-lg">
                     <p className="text-xs text-slate-400 font-semibold mb-1">Total Recaudado (Ventas)</p>
@@ -321,18 +445,14 @@ export default function AdminDashboard() {
                     <p className="text-2xl font-black text-blue-400">
                       {profiles.length}
                     </p>
-                    <p className="text-[11px] text-slate-500 mt-2">Con consentimiento legal Habeas Data</p>
+                    <p className="text-[11px] text-slate-500 mt-2">Con consentimiento Habeas Data</p>
                   </div>
                 </div>
 
-                {/* ÚLTIMOS PEDIDOS REGISTRADOS */}
                 <div className="bg-[#0d122b] border border-purple-500/25 rounded-2xl p-6 shadow-xl">
                   <h3 className="text-sm font-bold text-white mb-4 flex items-center justify-between">
                     <span>Últimos Pedidos Registrados</span>
-                    <button
-                      onClick={() => setActiveTab('orders')}
-                      className="text-xs text-purple-400 hover:text-purple-300 underline"
-                    >
+                    <button onClick={() => setActiveTab('orders')} className="text-xs text-purple-400 hover:text-purple-300 underline">
                       Ver todos
                     </button>
                   </h3>
@@ -378,7 +498,7 @@ export default function AdminDashboard() {
               </div>
             )}
 
-            {/* PESTAÑA: PEDIDOS */}
+            {/* TAB: PEDIDOS */}
             {activeTab === 'orders' && (
               <div className="space-y-4">
                 <h3 className="text-sm font-bold text-white mb-2">Historial Completo de Pedidos</h3>
@@ -431,7 +551,6 @@ export default function AdminDashboard() {
                           </div>
                         </div>
 
-                        {/* Total y Acciones */}
                         <div className="flex flex-col items-end gap-3 w-full lg:w-auto border-t lg:border-t-0 pt-3 lg:pt-0 border-purple-500/20">
                           <span className="text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-300">
                             ${Number(order.total).toLocaleString('es-CO')} COP
@@ -463,12 +582,12 @@ export default function AdminDashboard() {
               </div>
             )}
 
-            {/* PESTAÑA: INVENTARIO */}
+            {/* TAB: INVENTARIO */}
             {activeTab === 'inventory' && (
               <div className="space-y-4">
                 <div className="flex justify-between items-center mb-2">
                   <h3 className="text-sm font-bold text-white">Control de Stock y Visibilidad</h3>
-                  <span className="text-xs text-slate-400">{products.length} productos en base de datos</span>
+                  <span className="text-xs text-slate-400">{products.length} producto(s) en inventario</span>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -479,7 +598,7 @@ export default function AdminDashboard() {
                     >
                       <div>
                         <div className="flex justify-between items-start gap-2 mb-2">
-                          <h4 className="text-sm font-bold text-white line-clamp-1">{prod.title}</h4>
+                          <h4 className="text-sm font-bold text-white">{prod.title}</h4>
                           <span className="text-[10px] bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded-full border border-purple-500/30">
                             {prod.category || 'General'}
                           </span>
@@ -520,7 +639,7 @@ export default function AdminDashboard() {
                           <span className="text-xs text-slate-300">Visible en Tienda:</span>
                           <button
                             onClick={() => handleToggleProductActive(prod.id, prod.active !== false)}
-                            className={`px-3 py-1 rounded-full text-xs font-bold transition ${
+                            className={`px-3 py-1 rounded-full text-xs font-bold transition cursor-pointer ${
                               prod.active !== false
                                 ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
                                 : 'bg-slate-800 text-slate-400 border border-slate-700'
@@ -536,19 +655,19 @@ export default function AdminDashboard() {
               </div>
             )}
 
-            {/* PESTAÑA: CLIENTES & HABEAS DATA */}
+            {/* TAB: CLIENTES */}
             {activeTab === 'customers' && (
               <div className="space-y-4">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-2">
                   <div>
                     <h3 className="text-sm font-bold text-white">Base de Clientes Registrados</h3>
                     <p className="text-xs text-slate-400">
-                      Usuarios con consentimiento explícito de tratamiento de datos personales (Ley 1581 de 2012).
+                      Usuarios con consentimiento Habeas Data (Ley 1581 de 2012).
                     </p>
                   </div>
                   <button
                     onClick={handleCopyEmails}
-                    className="bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs px-4 py-2 rounded-xl transition shadow-md flex items-center gap-2"
+                    className="bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs px-4 py-2 rounded-xl transition shadow-md flex items-center gap-2 cursor-pointer"
                   >
                     <span>📋</span>
                     <span>{copiedEmails ? '¡Correos copiados!' : 'Copiar todos los correos'}</span>
