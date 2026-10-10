@@ -30,8 +30,12 @@ interface Order {
 interface Product {
   id: string;
   title: string;
+  description: string;
+  full_description?: string;
   price: number;
   stock: number;
+  image_url: string;
+  images?: string[];
   active: boolean;
   category?: string;
 }
@@ -61,6 +65,18 @@ export default function AdminDashboard() {
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [copiedEmails, setCopiedEmails] = useState<boolean>(false);
 
+  // Estados para Crear Producto Nuevo
+  const [showAddProductModal, setShowAddProductModal] = useState<boolean>(false);
+  const [newTitle, setNewTitle] = useState('');
+  const [newCategory, setNewCategory] = useState('Tecnología');
+  const [newPrice, setNewPrice] = useState<number | ''>('');
+  const [newStock, setNewStock] = useState<number | ''>(5);
+  const [newDescription, setNewDescription] = useState('');
+  const [newFullDescription, setNewFullDescription] = useState('');
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [isSavingProduct, setIsSavingProduct] = useState<boolean>(false);
+  const [productError, setProductError] = useState<string | null>(null);
+
   // Verificar sesión existente
   useEffect(() => {
     async function checkSession() {
@@ -75,7 +91,6 @@ export default function AdminDashboard() {
     checkSession();
   }, []);
 
-  // Login sin exponer correo por defecto
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoggingIn(true);
@@ -194,6 +209,105 @@ export default function AdminDashboard() {
     }
   };
 
+  // ELIMINAR PRODUCTO DEFINITIVAMENTE
+  const handleDeleteProduct = async (productId: string, productTitle: string) => {
+    const confirmDelete = window.confirm(`¿Estás seguro de que deseas eliminar permanentemente "${productTitle}"? Esta acción no se puede deshacer.`);
+    if (!confirmDelete) return;
+
+    try {
+      const { error } = await supabase
+        .from('products')
+        .delete()
+        .eq('id', productId);
+
+      if (error) {
+        alert('Error al eliminar producto: ' + error.message);
+      } else {
+        setProducts((prev) => prev.filter((p) => p.id !== productId));
+        alert('Producto eliminado exitosamente.');
+      }
+    } catch (err: any) {
+      alert('Error al eliminar: ' + err?.message);
+    }
+  };
+
+  // CREAR NUEVO PRODUCTO CON SUBIDA DE FOTOS A SUPABASE STORAGE
+  const handleCreateProduct = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newTitle || newPrice === '' || newStock === '') {
+      setProductError('Por favor completa los campos obligatorios (Título, Precio y Stock).');
+      return;
+    }
+
+    setIsSavingProduct(true);
+    setProductError(null);
+
+    try {
+      const uploadedImageUrls: string[] = [];
+
+      // Subir cada foto seleccionada al Storage bucket 'products'
+      for (let i = 0; i < selectedFiles.length; i++) {
+        const file = selectedFiles[i];
+        const cleanFileName = `${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from('products')
+          .upload(cleanFileName, file, { cacheControl: '3600', upsert: true });
+
+        if (uploadError) {
+          console.warn('Error subiendo imagen a storage:', uploadError.message);
+        } else {
+          const { data: publicUrlData } = supabase.storage
+            .from('products')
+            .getPublicUrl(cleanFileName);
+
+          if (publicUrlData?.publicUrl) {
+            uploadedImageUrls.push(publicUrlData.publicUrl);
+          }
+        }
+      }
+
+      // Si no subió foto, colocamos una imagen genérica por defecto
+      const finalMainImage = uploadedImageUrls.length > 0 ? uploadedImageUrls[0] : '/logo.png';
+      const finalImagesList = uploadedImageUrls.length > 0 ? uploadedImageUrls : [finalMainImage];
+
+      const { data, error } = await supabase.from('products').insert([
+        {
+          title: newTitle,
+          category: newCategory,
+          price: Number(newPrice),
+          stock: Number(newStock),
+          description: newDescription,
+          full_description: newFullDescription || newDescription,
+          image_url: finalMainImage,
+          images: finalImagesList,
+          active: true,
+        },
+      ]).select();
+
+      if (error) {
+        setProductError('Error al crear producto: ' + error.message);
+      } else {
+        if (data && data.length > 0) {
+          setProducts((prev) => [data[0] as Product, ...prev]);
+        }
+        setShowAddProductModal(false);
+        setNewTitle('');
+        setNewCategory('Tecnología');
+        setNewPrice('');
+        setNewStock(5);
+        setNewDescription('');
+        setNewFullDescription('');
+        setSelectedFiles([]);
+        alert('¡Producto agregado exitosamente al catálogo!');
+      }
+    } catch (err: any) {
+      setProductError('Error: ' + err?.message);
+    } finally {
+      setIsSavingProduct(false);
+    }
+  };
+
   const handleCopyEmails = () => {
     const emailList = profiles.map((p) => p.email).filter(Boolean).join(', ');
     navigator.clipboard.writeText(emailList);
@@ -209,7 +323,6 @@ export default function AdminDashboard() {
     );
   }
 
-  // LOGIN CON PLACEHOLDER NEUTRO Y AUTOCOMPLETE OFF
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-[#060814] flex items-center justify-center p-4">
@@ -272,7 +385,6 @@ export default function AdminDashboard() {
     );
   }
 
-  // Cálculos de métricas
   const completedOrders = orders.filter((o) => o.status === 'completado');
   const pendingOrders = orders.filter((o) => o.status === 'pendiente');
   const totalRevenue = completedOrders.reduce((acc, o) => acc + Number(o.total || 0), 0);
@@ -296,7 +408,7 @@ export default function AdminDashboard() {
         <div className="flex items-center gap-3">
           <button
             onClick={fetchData}
-            className="text-xs bg-[#141a38] hover:bg-[#1f2652] text-slate-200 border border-purple-500/30 px-3 py-1.5 rounded-lg transition"
+            className="text-xs bg-[#141a38] hover:bg-[#1f2652] text-slate-200 border border-purple-500/30 px-3 py-1.5 rounded-lg transition cursor-pointer"
           >
             🔄 Actualizar
           </button>
@@ -308,7 +420,7 @@ export default function AdminDashboard() {
           </Link>
           <button
             onClick={handleLogout}
-            className="text-xs bg-rose-900/40 hover:bg-rose-900/70 text-rose-200 border border-rose-700/40 px-3 py-1.5 rounded-lg transition"
+            className="text-xs bg-rose-900/40 hover:bg-rose-900/70 text-rose-200 border border-rose-700/40 px-3 py-1.5 rounded-lg transition cursor-pointer"
           >
             Cerrar Sesión
           </button>
@@ -319,7 +431,7 @@ export default function AdminDashboard() {
         <div className="max-w-7xl mx-auto flex gap-2 overflow-x-auto py-2.5">
           <button
             onClick={() => setActiveTab('dashboard')}
-            className={`px-4 py-2 rounded-xl text-xs font-semibold transition ${
+            className={`px-4 py-2 rounded-xl text-xs font-semibold transition cursor-pointer ${
               activeTab === 'dashboard'
                 ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-md'
                 : 'text-slate-400 hover:text-white hover:bg-white/5'
@@ -329,7 +441,7 @@ export default function AdminDashboard() {
           </button>
           <button
             onClick={() => setActiveTab('orders')}
-            className={`relative px-4 py-2 rounded-xl text-xs font-semibold transition ${
+            className={`relative px-4 py-2 rounded-xl text-xs font-semibold transition cursor-pointer ${
               activeTab === 'orders'
                 ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-md'
                 : 'text-slate-400 hover:text-white hover:bg-white/5'
@@ -344,7 +456,7 @@ export default function AdminDashboard() {
           </button>
           <button
             onClick={() => setActiveTab('inventory')}
-            className={`relative px-4 py-2 rounded-xl text-xs font-semibold transition ${
+            className={`relative px-4 py-2 rounded-xl text-xs font-semibold transition cursor-pointer ${
               activeTab === 'inventory'
                 ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-md'
                 : 'text-slate-400 hover:text-white hover:bg-white/5'
@@ -359,7 +471,7 @@ export default function AdminDashboard() {
           </button>
           <button
             onClick={() => setActiveTab('customers')}
-            className={`px-4 py-2 rounded-xl text-xs font-semibold transition ${
+            className={`px-4 py-2 rounded-xl text-xs font-semibold transition cursor-pointer ${
               activeTab === 'customers'
                 ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-md'
                 : 'text-slate-400 hover:text-white hover:bg-white/5'
@@ -405,6 +517,7 @@ export default function AdminDashboard() {
               </div>
             )}
 
+            {/* TAB: DASHBOARD */}
             {activeTab === 'dashboard' && (
               <div className="space-y-6">
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -446,7 +559,7 @@ export default function AdminDashboard() {
                 <div className="bg-[#0d122b] border border-purple-500/25 rounded-2xl p-6 shadow-xl">
                   <h3 className="text-sm font-bold text-white mb-4 flex items-center justify-between">
                     <span>Últimos Pedidos Registrados</span>
-                    <button onClick={() => setActiveTab('orders')} className="text-xs text-purple-400 hover:text-purple-300 underline">
+                    <button onClick={() => setActiveTab('orders')} className="text-xs text-purple-400 hover:text-purple-300 underline cursor-pointer">
                       Ver todos
                     </button>
                   </h3>
@@ -492,6 +605,7 @@ export default function AdminDashboard() {
               </div>
             )}
 
+            {/* TAB: PEDIDOS */}
             {activeTab === 'orders' && (
               <div className="space-y-4">
                 <h3 className="text-sm font-bold text-white mb-2">Historial Completo de Pedidos</h3>
@@ -554,14 +668,14 @@ export default function AdminDashboard() {
                               <button
                                 onClick={() => handleUpdateOrderStatus(order.id, 'completado')}
                                 disabled={updatingId === order.id}
-                                className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-3.5 py-2 rounded-xl transition shadow-md active:scale-95 disabled:opacity-50"
+                                className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-3.5 py-2 rounded-xl transition shadow-md active:scale-95 disabled:opacity-50 cursor-pointer"
                               >
                                 {updatingId === order.id ? 'Procesando...' : '✓ Aprobar & Descontar Stock'}
                               </button>
                               <button
                                 onClick={() => handleUpdateOrderStatus(order.id, 'cancelado')}
                                 disabled={updatingId === order.id}
-                                className="bg-rose-900/60 hover:bg-rose-800 text-rose-200 font-semibold text-xs px-3 py-2 rounded-xl transition border border-rose-700/50"
+                                className="bg-rose-900/60 hover:bg-rose-800 text-rose-200 font-semibold text-xs px-3 py-2 rounded-xl transition border border-rose-700/50 cursor-pointer"
                               >
                                 Cancelar
                               </button>
@@ -575,11 +689,23 @@ export default function AdminDashboard() {
               </div>
             )}
 
+            {/* TAB: INVENTARIO CON BOTÓN AGREGAR Y ELIMINAR */}
             {activeTab === 'inventory' && (
               <div className="space-y-4">
-                <div className="flex justify-between items-center mb-2">
-                  <h3 className="text-sm font-bold text-white">Control de Stock y Visibilidad</h3>
-                  <span className="text-xs text-slate-400">{products.length} producto(s) en inventario</span>
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-2">
+                  <div>
+                    <h3 className="text-sm font-bold text-white">Control de Stock y Visibilidad</h3>
+                    <p className="text-xs text-slate-400">{products.length} producto(s) en inventario</p>
+                  </div>
+                  
+                  {/* BOTÓN PARA ABRIR FORMULARIO DE AGREGAR PRODUCTO */}
+                  <button
+                    onClick={() => { setShowAddProductModal(true); setProductError(null); }}
+                    className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition shadow-lg shadow-purple-900/40 flex items-center gap-2 active:scale-95 cursor-pointer"
+                  >
+                    <span>➕</span>
+                    <span>Agregar Nuevo Producto</span>
+                  </button>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -590,23 +716,24 @@ export default function AdminDashboard() {
                     >
                       <div>
                         <div className="flex justify-between items-start gap-2 mb-2">
-                          <h4 className="text-sm font-bold text-white">{prod.title}</h4>
+                          <h4 className="text-sm font-bold text-white line-clamp-1">{prod.title}</h4>
                           <span className="text-[10px] bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded-full border border-purple-500/30">
                             {prod.category || 'General'}
                           </span>
                         </div>
-                        <p className="text-base font-black text-purple-300 mb-4">
+                        <p className="text-base font-black text-purple-300 mb-3">
                           ${Number(prod.price).toLocaleString('es-CO')} COP
                         </p>
                       </div>
 
                       <div className="space-y-3 pt-3 border-t border-purple-500/20">
+                        {/* Control de Stock */}
                         <div className="flex items-center justify-between">
                           <span className="text-xs text-slate-300">Unidades en Stock:</span>
                           <div className="flex items-center gap-2">
                             <button
                               onClick={() => handleUpdateStock(prod.id, prod.stock - 1)}
-                              className="w-7 h-7 bg-[#141a38] hover:bg-purple-600 rounded-lg text-xs font-bold text-white flex items-center justify-center border border-purple-500/30"
+                              className="w-7 h-7 bg-[#141a38] hover:bg-purple-600 rounded-lg text-xs font-bold text-white flex items-center justify-center border border-purple-500/30 cursor-pointer"
                             >
                               -
                             </button>
@@ -618,15 +745,15 @@ export default function AdminDashboard() {
                             />
                             <button
                               onClick={() => handleUpdateStock(prod.id, prod.stock + 1)}
-                              className="w-7 h-7 bg-[#141a38] hover:bg-purple-600 rounded-lg text-xs font-bold text-white flex items-center justify-center border border-purple-500/30"
+                              className="w-7 h-7 bg-[#141a38] hover:bg-purple-600 rounded-lg text-xs font-bold text-white flex items-center justify-center border border-purple-500/30 cursor-pointer"
                             >
                               +
                             </button>
                           </div>
                         </div>
 
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs text-slate-300">Visible en Tienda:</span>
+                        {/* Visibilidad y Botón Eliminar */}
+                        <div className="flex items-center justify-between pt-1">
                           <button
                             onClick={() => handleToggleProductActive(prod.id, prod.active !== false)}
                             className={`px-3 py-1 rounded-full text-xs font-bold transition cursor-pointer ${
@@ -637,6 +764,15 @@ export default function AdminDashboard() {
                           >
                             {prod.active !== false ? '✓ Habilitado' : '✕ Oculto'}
                           </button>
+
+                          <button
+                            onClick={() => handleDeleteProduct(prod.id, prod.title)}
+                            className="text-xs text-red-400 hover:text-red-300 bg-red-950/30 hover:bg-red-900/50 border border-red-500/30 px-3 py-1 rounded-full transition flex items-center gap-1 cursor-pointer"
+                            title="Eliminar producto permanentemente"
+                          >
+                            <span>🗑️</span>
+                            <span>Eliminar</span>
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -645,6 +781,7 @@ export default function AdminDashboard() {
               </div>
             )}
 
+            {/* TAB: CLIENTES */}
             {activeTab === 'customers' && (
               <div className="space-y-4">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-2">
@@ -706,6 +843,152 @@ export default function AdminDashboard() {
           </>
         )}
       </main>
+
+      {/* MODAL PARA AGREGAR NUEVO PRODUCTO */}
+      {showAddProductModal && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-[#0d122b] border border-purple-500/40 rounded-3xl max-w-xl w-full p-6 sm:p-8 relative shadow-2xl my-8 max-h-[90vh] flex flex-col">
+            <button
+              onClick={() => setShowAddProductModal(false)}
+              className="absolute top-5 right-5 text-slate-400 hover:text-white text-lg cursor-pointer"
+            >
+              ✕
+            </button>
+
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-2xl">📦</span>
+              <h3 className="text-lg font-bold text-white">Agregar Nuevo Producto</h3>
+            </div>
+            <p className="text-xs text-slate-400 mb-4">
+              Completa los datos del producto y sube sus fotos para publicarlo en la tienda.
+            </p>
+
+            {productError && (
+              <div className="bg-red-500/20 border border-red-500/40 text-red-300 text-xs p-3 rounded-xl mb-4 font-semibold">
+                {productError}
+              </div>
+            )}
+
+            <form onSubmit={handleCreateProduct} className="space-y-4 text-xs overflow-y-auto pr-1 flex-1">
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">Título del Producto *</label>
+                <input
+                  type="text"
+                  required
+                  value={newTitle}
+                  onChange={(e) => setNewTitle(e.target.value)}
+                  placeholder="Ej. Intercomunicador Casco Bluetooth Pro"
+                  className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:border-purple-400 text-sm"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-slate-300 font-semibold mb-1">Categoría</label>
+                  <select
+                    value={newCategory}
+                    onChange={(e) => setNewCategory(e.target.value)}
+                    className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-purple-400 text-xs cursor-pointer"
+                  >
+                    <option value="Tecnología">Tecnología</option>
+                    <option value="Motos">Motos</option>
+                    <option value="Hogar">Hogar</option>
+                    <option value="Accesorios">Accesorios</option>
+                    <option value="Iluminación">Iluminación</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-slate-300 font-semibold mb-1">Precio (COP) *</label>
+                  <input
+                    type="number"
+                    required
+                    value={newPrice}
+                    onChange={(e) => setNewPrice(e.target.value === '' ? '' : Number(e.target.value))}
+                    placeholder="Ej. 165000"
+                    className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-purple-400 text-xs"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-300 font-semibold mb-1">Stock Inicial *</label>
+                  <input
+                    type="number"
+                    required
+                    value={newStock}
+                    onChange={(e) => setNewStock(e.target.value === '' ? '' : Number(e.target.value))}
+                    placeholder="Ej. 10"
+                    className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-purple-400 text-xs"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">Descripción Breve (Para la tarjeta)</label>
+                <textarea
+                  rows={2}
+                  value={newDescription}
+                  onChange={(e) => setNewDescription(e.target.value)}
+                  placeholder="Resumen de 1 o 2 líneas que se verá en el catálogo principal..."
+                  className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3.5 py-2 text-white focus:outline-none focus:border-purple-400 text-xs"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">Descripción Completa (Para la ventana de detalles)</label>
+                <textarea
+                  rows={4}
+                  value={newFullDescription}
+                  onChange={(e) => setNewFullDescription(e.target.value)}
+                  placeholder="Especificaciones completas, características principales, garantía..."
+                  className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3.5 py-2 text-white focus:outline-none focus:border-purple-400 text-xs"
+                />
+              </div>
+
+              {/* CARGA DE FOTOS DE PRODUCTO */}
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">
+                  Fotos del Producto (hasta 4 imágenes)
+                </label>
+                <input
+                  type="file"
+                  multiple
+                  accept="image/*"
+                  onChange={(e) => {
+                    if (e.target.files) {
+                      const filesArray = Array.from(e.target.files).slice(0, 4);
+                      setSelectedFiles(filesArray);
+                    }
+                  }}
+                  className="w-full text-xs text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-purple-600/30 file:text-purple-200 hover:file:bg-purple-600/50 cursor-pointer bg-[#141a38] p-2 rounded-xl border border-purple-500/30"
+                />
+                {selectedFiles.length > 0 && (
+                  <p className="text-[11px] text-purple-300 mt-1">
+                    {selectedFiles.length} foto(s) seleccionada(s): {selectedFiles.map(f => f.name).join(', ')}
+                  </p>
+                )}
+              </div>
+
+              <div className="pt-2">
+                <button
+                  type="submit"
+                  disabled={isSavingProduct}
+                  className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-bold py-3.5 rounded-xl transition shadow-lg shadow-purple-900/40 text-sm active:scale-95 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
+                >
+                  {isSavingProduct ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      <span>Guardando y subiendo fotos...</span>
+                    </>
+                  ) : (
+                    <span>Guardar y Publicar Producto</span>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
