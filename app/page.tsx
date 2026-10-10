@@ -77,19 +77,19 @@ export default function Home() {
       
       {/* IMAGEN DE FONDO (fondo.png) */}
       <div 
-        className="fixed inset-0 pointer-events-none z-0 bg-cover bg-center opacity-60"
+        className="fixed inset-0 pointer-events-none z-0 bg-cover bg-center opacity-65"
         style={{ backgroundImage: "url('/fondo.png')" }}
       />
-      <div className="fixed inset-0 pointer-events-none z-0 bg-gradient-to-b from-[#060814]/80 via-transparent to-[#060814]/90" />
+      <div className="fixed inset-0 pointer-events-none z-0 bg-gradient-to-b from-[#060814]/75 via-transparent to-[#060814]/90" />
 
-      {/* CONTENIDO PRINCIPAL SOBRE EL FONDO */}
+      {/* CONTENIDO PRINCIPAL */}
       <div className="relative z-10 flex flex-col min-h-screen">
 
         {/* 1. BARRA SUPERIOR */}
         <header className="sticky top-0 z-50 bg-[#070a1a]/85 backdrop-blur-md border-b border-purple-500/20 px-4 py-3 md:px-8">
           <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
             
-            {/* Logo */}
+            {/* Logo cabecera */}
             <div 
               className="flex items-center gap-2 cursor-pointer transition-transform hover:scale-105" 
               onClick={() => { setSelectedCategory('Todas'); setSearchTerm(''); }}
@@ -100,7 +100,7 @@ export default function Home() {
                 width={200}
                 height={50}
                 priority
-                className="h-9 md:h-11 w-auto object-contain"
+                className="h-8 md:h-10 w-auto object-contain"
               />
             </div>
 
@@ -177,25 +177,46 @@ export default function Home() {
           {/* Fila Superior: Banner Hero + Beneficios */}
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-8">
             
-            {/* Banner Central Estilo Omniverse */}
-            <div className="lg:col-span-3 bg-[#0d122b]/85 backdrop-blur-md rounded-3xl p-6 sm:p-10 border border-purple-500/30 relative overflow-hidden flex flex-col justify-center shadow-2xl">
-              <div className="absolute top-0 right-0 -mr-16 -mt-16 w-72 h-72 bg-purple-600/15 rounded-full blur-3xl pointer-events-none"></div>
+            {/* Banner Central Estilo Idéntico a la Maqueta */}
+            <div className="lg:col-span-3 bg-[#1e1346]/85 backdrop-blur-md rounded-[32px] border border-purple-500/40 p-6 sm:p-8 relative overflow-hidden flex flex-col justify-between shadow-[0_0_35px_rgba(147,51,234,0.25)] min-h-[220px]">
               
-              <div className="flex items-center gap-4 mb-3">
-                <span className="text-4xl">🛍️</span>
-                <h1 className="text-3xl sm:text-5xl font-black italic tracking-wide text-transparent bg-clip-text bg-gradient-to-r from-blue-300 via-indigo-200 to-purple-300">
-                  Omniverse
-                </h1>
+              {/* Resplandor de fondo */}
+              <div className="absolute top-0 right-1/4 w-48 h-48 bg-purple-500/20 rounded-full blur-3xl pointer-events-none"></div>
+
+              {/* Icono de bolsa luminosa flotando arriba */}
+              <div className="absolute top-3 left-[42%] sm:left-[38%] text-3xl sm:text-4xl opacity-90 drop-shadow-[0_0_12px_rgba(168,85,247,0.8)] pointer-events-none select-none">
+                🛍️
               </div>
 
-              <p className="text-slate-300 text-sm sm:text-base max-w-xl mb-6 leading-relaxed">
-                Productos garantizados con la mejor relación calidad-precio. Explora nuestro catálogo y recibe directo en tu puerta.
-              </p>
+              <div className="flex flex-col md:flex-row items-center gap-4 z-10">
+                {/* Logo con el infinito 3D grande a la izquierda */}
+                <div className="shrink-0 -ml-2 sm:-ml-4">
+                  <Image
+                    src="/logo.png"
+                    alt="Omniverse"
+                    width={380}
+                    height={110}
+                    priority
+                    className="h-20 sm:h-28 w-auto object-contain drop-shadow-[0_0_18px_rgba(147,51,234,0.45)]"
+                  />
+                </div>
 
-              <div>
+                {/* Textos descriptivos a la derecha */}
+                <div className="flex-1 text-center md:text-left mt-2 md:mt-0">
+                  <p className="text-slate-200 text-xs sm:text-sm font-medium leading-relaxed drop-shadow-sm">
+                    Productos garantizados con la mejor relación calidad-precio.
+                  </p>
+                  <p className="text-slate-300 text-xs sm:text-sm leading-relaxed">
+                    Explora nuestro catálogo y recibe directo en tu puerta.
+                  </p>
+                </div>
+              </div>
+
+              {/* Botón Ver Catálogo abajo */}
+              <div className="mt-4 md:mt-2 z-10 text-center md:text-left md:ml-12">
                 <a
                   href="#catalogo"
-                  className="inline-block bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-semibold px-6 py-2.5 rounded-xl transition shadow-lg shadow-purple-900/50 active:scale-95"
+                  className="inline-block bg-gradient-to-r from-[#3b82f6] to-[#8b5cf6] hover:from-[#2563eb] hover:to-[#7c3aed] text-white font-semibold text-xs sm:text-sm px-7 py-2.5 rounded-full transition-all duration-300 shadow-[0_4px_15px_rgba(59,130,246,0.4)] active:scale-95"
                 >
                   Ver Catálogo
                 </a>
