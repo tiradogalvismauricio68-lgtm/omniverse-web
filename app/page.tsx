@@ -14,20 +14,35 @@ interface Product {
   category?: string;
 }
 
+interface CartItem extends Product {
+  quantity: number;
+}
+
 export default function Home() {
   const [products, setProducts] = useState<Product[]>([]);
-  const [cartCount, setCartCount] = useState<number>(0);
+  const [cart, setCart] = useState<CartItem[]>([]);
+  const [isCartOpen, setIsCartOpen] = useState<boolean>(false);
+  const [isCheckoutOpen, setIsCheckoutOpen] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('Todas');
   const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
   const [favorites, setFavorites] = useState<string[]>([]);
 
-  // Mensaje llamativo y persuasivo para WhatsApp
-  const whatsappMessage = encodeURIComponent(
+  // Datos del formulario de envío
+  const [customerName, setCustomerName] = useState('');
+  const [customerPhone, setCustomerPhone] = useState('');
+  const [customerCity, setCustomerCity] = useState('');
+  const [deliveryType, setDeliveryType] = useState<'domicilio' | 'recogida'>('domicilio');
+  const [customerAddress, setCustomerAddress] = useState('');
+  const [customerNeighborhood, setCustomerNeighborhood] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<'transferencia' | 'efectivo'>('transferencia');
+  const [notes, setNotes] = useState('');
+
+  const defaultWhatsappMessage = encodeURIComponent(
     "¡Hola Omniverse Store! 🚀 Vi su catálogo en la web y me gustaría recibir asesoría para hacer una compra. ¿Qué promociones y métodos de pago tienen disponibles hoy? ✨"
   );
-  const whatsappUrl = `https://wa.me/573057785317?text=${whatsappMessage}`;
+  const whatsappUrl = `https://wa.me/573057785317?text=${defaultWhatsappMessage}`;
   const instagramUrl = "https://www.instagram.com/omniverse_store01?exln=bHVjODYzbWRwNG0y&utm_source=qr";
 
   useEffect(() => {
@@ -49,9 +64,40 @@ export default function Home() {
     fetchProducts();
   }, []);
 
-  const addToCart = () => {
-    setCartCount((prev) => prev + 1);
+  // Funciones del Carrito
+  const addToCart = (product: Product) => {
+    setCart((prev) => {
+      const existing = prev.find((item) => item.id === product.id);
+      if (existing) {
+        return prev.map((item) =>
+          item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
+        );
+      }
+      return [...prev, { ...product, quantity: 1 }];
+    });
+    setIsCartOpen(true);
   };
+
+  const updateQuantity = (id: string, delta: number) => {
+    setCart((prev) =>
+      prev
+        .map((item) => {
+          if (item.id === id) {
+            const newQty = item.quantity + delta;
+            return newQty > 0 ? { ...item, quantity: newQty } : null;
+          }
+          return item;
+        })
+        .filter(Boolean) as CartItem[]
+    );
+  };
+
+  const removeFromCart = (id: string) => {
+    setCart((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  const cartTotal = cart.reduce((acc, item) => acc + item.price * item.quantity, 0);
+  const cartItemCount = cart.reduce((acc, item) => acc + item.quantity, 0);
 
   const toggleFavorite = (id: string) => {
     setFavorites((prev) =>
@@ -59,10 +105,9 @@ export default function Home() {
     );
   };
 
-  // Categorías con las nuevas adiciones: Motos y Gamer
+  // Categorías (sin gamer)
   const categories = [
     { name: 'Todas', icon: '🗳️' },
-    { name: 'Gamer', icon: '🎮' },
     { name: 'Motos', icon: '🏍️' },
     { name: 'Tecnología', icon: '🎧' },
     { name: 'Hogar', icon: '🏠' },
@@ -80,6 +125,44 @@ export default function Home() {
     return matchesSearch && matchesCategory;
   });
 
+  // Envío del pedido a WhatsApp con todos los datos
+  const handleCheckoutSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (cart.length === 0) return;
+
+    let itemsText = cart
+      .map(
+        (item, index) =>
+          `${index + 1}. *${item.title}* x${item.quantity} - $${(item.price * item.quantity).toLocaleString('es-CO')}`
+      )
+      .join('\n');
+
+    let text = `🛍️ *NUEVO PEDIDO - OMNIVERSE STORE*\n\n`;
+    text += `👤 *Cliente:* ${customerName}\n`;
+    text += `📱 *Teléfono:* ${customerPhone}\n`;
+    text += `📍 *Ciudad:* ${customerCity}\n`;
+    text += `🚚 *Tipo de Entrega:* ${deliveryType === 'domicilio' ? 'Envío a Domicilio' : 'Pasa a Recoger'}\n`;
+
+    if (deliveryType === 'domicilio') {
+      text += `🏠 *Dirección:* ${customerAddress}\n`;
+      if (customerNeighborhood) text += `📌 *Barrio:* ${customerNeighborhood}\n`;
+    }
+
+    text += `💳 *Método de Pago:* ${paymentMethod === 'transferencia' ? 'Transferencia (Nequi / Daviplata / Bancolombia)' : 'Efectivo contra entrega'}\n`;
+    if (notes) text += `📝 *Notas:* ${notes}\n`;
+
+    text += `\n📦 *PRODUCTOS:* \n${itemsText}\n\n`;
+    text += `💰 *TOTAL A PAGAR:* $${cartTotal.toLocaleString('es-CO')} COP\n\n`;
+    text += `Por favor confírmame disponibilidad para proceder con el pago y despacho. ¡Muchas gracias! ✨`;
+
+    const finalUrl = `https://wa.me/573057785317?text=${encodeURIComponent(text)}`;
+    window.open(finalUrl, '_blank');
+
+    setIsCheckoutOpen(false);
+    setIsCartOpen(false);
+  };
+
   return (
     <div className="relative min-h-screen text-slate-100 flex flex-col font-sans selection:bg-purple-600 selection:text-white bg-[#060814]">
       
@@ -94,10 +177,10 @@ export default function Home() {
       <div className="relative z-10 flex flex-col min-h-screen">
 
         {/* 1. BARRA SUPERIOR */}
-        <header className="sticky top-0 z-50 bg-[#070a1a]/85 backdrop-blur-md border-b border-purple-500/20 px-4 py-3 md:px-8">
+        <header className="sticky top-0 z-40 bg-[#070a1a]/85 backdrop-blur-md border-b border-purple-500/20 px-4 py-3 md:px-8">
           <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
             
-            {/* Logo cabecera */}
+            {/* Logo */}
             <div 
               className="flex items-center gap-2 cursor-pointer transition-transform hover:scale-105" 
               onClick={() => { setSelectedCategory('Todas'); setSearchTerm(''); }}
@@ -154,13 +237,17 @@ export default function Home() {
                 )}
               </button>
 
-              <button className="relative flex items-center gap-2 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white text-xs md:text-sm font-semibold px-4 py-2 rounded-xl transition-all shadow-lg shadow-purple-900/40 active:scale-95">
+              {/* Botón Carrito con apertura del Drawer */}
+              <button 
+                onClick={() => setIsCartOpen(true)}
+                className="relative flex items-center gap-2 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white text-xs md:text-sm font-semibold px-4 py-2 rounded-xl transition-all shadow-lg shadow-purple-900/40 active:scale-95 cursor-pointer"
+              >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
                 </svg>
                 <span className="hidden md:inline">Carrito</span>
                 <span className="bg-white text-purple-900 font-bold text-xs px-2 py-0.5 rounded-full shadow-sm">
-                  {cartCount}
+                  {cartItemCount}
                 </span>
               </button>
             </div>
@@ -348,8 +435,8 @@ export default function Home() {
                               ${Number(product.price).toLocaleString('es-CO')}
                             </div>
                             <button
-                              onClick={addToCart}
-                              className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-medium py-2.5 px-4 rounded-xl transition duration-200 shadow-lg shadow-purple-900/30 active:scale-95 flex items-center justify-center gap-2 text-sm"
+                              onClick={() => addToCart(product)}
+                              className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-medium py-2.5 px-4 rounded-xl transition duration-200 shadow-lg shadow-purple-900/30 active:scale-95 flex items-center justify-center gap-2 text-sm cursor-pointer"
                             >
                               <span>Añadir al Carrito</span>
                               <span>🛒</span>
@@ -365,20 +452,272 @@ export default function Home() {
           </div>
         </div>
 
-        {/* 3. BOTÓN FLOTANTE WHATSAPP */}
-        <a
-          href={whatsappUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="fixed bottom-6 right-6 z-50 bg-[#25D366] hover:bg-[#20ba59] text-white p-3.5 rounded-full shadow-2xl transition-transform hover:scale-110 flex items-center justify-center border-2 border-white/20"
-          title="Chatear por WhatsApp"
-        >
-          <svg className="w-7 h-7" fill="currentColor" viewBox="0 0 24 24">
-            <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z"/>
-          </svg>
-        </a>
+        {/* 3. PANEL LATERAL DESLIZABLE (DRAWER DEL CARRITO) */}
+        {isCartOpen && (
+          <div className="fixed inset-0 z-50 overflow-hidden">
+            <div 
+              className="absolute inset-0 bg-black/70 backdrop-blur-sm transition-opacity"
+              onClick={() => setIsCartOpen(false)}
+            />
+            <div className="absolute inset-y-0 right-0 max-w-full flex pl-10">
+              <div className="w-screen max-w-md bg-[#0b0e24] border-l border-purple-500/30 p-6 flex flex-col justify-between shadow-2xl">
+                <div>
+                  <div className="flex items-center justify-between pb-4 border-b border-purple-500/20">
+                    <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                      <span>🛒</span> Tu Carrito ({cartItemCount})
+                    </h2>
+                    <button 
+                      onClick={() => setIsCartOpen(false)}
+                      className="text-slate-400 hover:text-white p-1 text-xl"
+                    >
+                      ✕
+                    </button>
+                  </div>
 
-        {/* 4. MODAL CUENTA */}
+                  {/* Lista de productos */}
+                  <div className="mt-4 space-y-4 max-h-[55vh] overflow-y-auto pr-1">
+                    {cart.length === 0 ? (
+                      <div className="text-center py-12 text-slate-400">
+                        <p className="text-4xl mb-2">🛍️</p>
+                        <p className="text-sm">Tu carrito está vacío</p>
+                      </div>
+                    ) : (
+                      cart.map((item) => (
+                        <div 
+                          key={item.id} 
+                          className="bg-[#121638] border border-purple-500/20 rounded-xl p-3 flex items-center gap-3"
+                        >
+                          <img 
+                            src={item.image_url || 'https://via.placeholder.com/100'} 
+                            alt={item.title} 
+                            className="w-14 h-14 object-cover rounded-lg bg-slate-800"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <h4 className="text-xs font-semibold text-white truncate">{item.title}</h4>
+                            <p className="text-xs text-purple-300 font-bold">
+                              ${Number(item.price).toLocaleString('es-CO')}
+                            </p>
+                            {/* Controles de cantidad */}
+                            <div className="flex items-center gap-2 mt-2">
+                              <button 
+                                onClick={() => updateQuantity(item.id, -1)}
+                                className="w-6 h-6 bg-[#1a204d] hover:bg-purple-600 rounded text-xs font-bold text-white flex items-center justify-center"
+                              >
+                                -
+                              </button>
+                              <span className="text-xs font-semibold">{item.quantity}</span>
+                              <button 
+                                onClick={() => updateQuantity(item.id, 1)}
+                                className="w-6 h-6 bg-[#1a204d] hover:bg-purple-600 rounded text-xs font-bold text-white flex items-center justify-center"
+                              >
+                                +
+                              </button>
+                            </div>
+                          </div>
+                          <button 
+                            onClick={() => removeFromCart(item.id)}
+                            className="text-red-400 hover:text-red-300 p-1 text-sm"
+                            title="Eliminar"
+                          >
+                            🗑️
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                {/* Subtotal y botón para ir al formulario */}
+                {cart.length > 0 && (
+                  <div className="pt-4 border-t border-purple-500/20">
+                    <div className="flex justify-between items-center mb-4">
+                      <span className="text-sm text-slate-300">Total a Pagar:</span>
+                      <span className="text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-300">
+                        ${cartTotal.toLocaleString('es-CO')} COP
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setIsCartOpen(false);
+                        setIsCheckoutOpen(true);
+                      }}
+                      className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-bold py-3 rounded-xl transition duration-200 shadow-lg shadow-purple-900/40 text-sm active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      <span>Finalizar Pedido</span>
+                      <span>➡️</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 4. MODAL / FORMULARIO DE CHECKOUT (DATOS Y ENVÍO) */}
+        {isCheckoutOpen && (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+            <div className="bg-[#0d122b] border border-purple-500/40 rounded-3xl max-w-lg w-full p-6 sm:p-8 relative shadow-2xl my-8">
+              <button
+                onClick={() => setIsCheckoutOpen(false)}
+                className="absolute top-5 right-5 text-slate-400 hover:text-white text-lg"
+              >
+                ✕
+              </button>
+
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-2xl">📋</span>
+                <h3 className="text-xl font-bold text-white">Datos de tu Pedido</h3>
+              </div>
+              <p className="text-xs text-slate-400 mb-6">
+                Completa tus datos para despachar tu compra y confirmar el pago por WhatsApp.
+              </p>
+
+              <form onSubmit={handleCheckoutSubmit} className="space-y-4 text-xs sm:text-sm">
+                
+                {/* Nombre y Teléfono */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-slate-300 font-semibold mb-1">Nombre Completo *</label>
+                    <input
+                      type="text"
+                      required
+                      value={customerName}
+                      onChange={(e) => setCustomerName(e.target.value)}
+                      placeholder="Ej. Juan Pérez"
+                      className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:border-purple-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-300 font-semibold mb-1">Teléfono / Celular *</label>
+                    <input
+                      type="tel"
+                      required
+                      value={customerPhone}
+                      onChange={(e) => setCustomerPhone(e.target.value)}
+                      placeholder="Ej. 300 123 4567"
+                      className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:border-purple-400"
+                    />
+                  </div>
+                </div>
+
+                {/* Ciudad y Tipo de entrega */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-slate-300 font-semibold mb-1">Ciudad / Municipio *</label>
+                    <input
+                      type="text"
+                      required
+                      value={customerCity}
+                      onChange={(e) => setCustomerCity(e.target.value)}
+                      placeholder="Ej. Bogotá, Medellín..."
+                      className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:border-purple-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-300 font-semibold mb-1">Tipo de Entrega</label>
+                    <select
+                      value={deliveryType}
+                      onChange={(e) => setDeliveryType(e.target.value as 'domicilio' | 'recogida')}
+                      className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:border-purple-400 cursor-pointer"
+                    >
+                      <option value="domicilio">🚚 Envío a Domicilio</option>
+                      <option value="recogida">🏬 Pasa a Recoger</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Dirección y Barrio si es a domicilio */}
+                {deliveryType === 'domicilio' && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-slate-300 font-semibold mb-1">Dirección de Entrega *</label>
+                      <input
+                        type="text"
+                        required
+                        value={customerAddress}
+                        onChange={(e) => setCustomerAddress(e.target.value)}
+                        placeholder="Ej. Calle 123 # 45-67 Apto 201"
+                        className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:border-purple-400"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-slate-300 font-semibold mb-1">Barrio</label>
+                      <input
+                        type="text"
+                        value={customerNeighborhood}
+                        onChange={(e) => setCustomerNeighborhood(e.target.value)}
+                        placeholder="Ej. Chapinero, Poblado..."
+                        className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:border-purple-400"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Forma de Pago */}
+                <div>
+                  <label className="block text-slate-300 font-semibold mb-1">Método de Pago Preferido</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setPaymentMethod('transferencia')}
+                      className={`p-2.5 rounded-xl border text-center transition font-medium ${
+                        paymentMethod === 'transferencia'
+                          ? 'border-purple-500 bg-purple-600/30 text-white'
+                          : 'border-purple-500/20 bg-[#141a38] text-slate-400'
+                      }`}
+                    >
+                      📲 Transferencia (Nequi / Bancolombia)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPaymentMethod('efectivo')}
+                      className={`p-2.5 rounded-xl border text-center transition font-medium ${
+                        paymentMethod === 'efectivo'
+                          ? 'border-purple-500 bg-purple-600/30 text-white'
+                          : 'border-purple-500/20 bg-[#141a38] text-slate-400'
+                      }`}
+                    >
+                      💵 Efectivo contra entrega
+                    </button>
+                  </div>
+                </div>
+
+                {/* Notas adicionales */}
+                <div>
+                  <label className="block text-slate-300 font-semibold mb-1">Notas adicionales (opcional)</label>
+                  <textarea
+                    rows={2}
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    placeholder="Instrucciones del timbre, referencias, etc."
+                    className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3.5 py-2 text-white focus:outline-none focus:border-purple-400 text-xs"
+                  />
+                </div>
+
+                {/* Resumen del Total */}
+                <div className="bg-[#121638] rounded-xl p-3 flex justify-between items-center border border-purple-500/20">
+                  <span className="text-slate-300">Total a pagar:</span>
+                  <span className="text-lg font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-300">
+                    ${cartTotal.toLocaleString('es-CO')} COP
+                  </span>
+                </div>
+
+                {/* Botón de Enviar a WhatsApp */}
+                <button
+                  type="submit"
+                  className="w-full bg-[#25D366] hover:bg-[#20ba59] text-white font-bold py-3.5 rounded-xl transition duration-200 shadow-xl shadow-emerald-900/30 text-sm flex items-center justify-center gap-2 active:scale-95 cursor-pointer"
+                >
+                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z"/>
+                  </svg>
+                  <span>Confirmar Pedido por WhatsApp</span>
+                </button>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* 5. MODAL DE CUENTA */}
         {showAuthModal && (
           <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
             <div className="bg-[#0d122b] border border-purple-500/40 rounded-2xl max-w-sm w-full p-6 relative shadow-2xl">
@@ -389,7 +728,7 @@ export default function Home() {
                 ✕
               </button>
               <h3 className="text-xl font-bold text-white mb-2">Mi Cuenta</h3>
-              <p className="text-xs text-slate-400 mb-6">Inicia sesión o regístrate para gestionar tus pedidos.</p>
+              <p className="text-xs text-slate-400 mb-6">Inicia sesión o regístrate para gestionar tus compras.</p>
               
               <div className="space-y-3">
                 <input
@@ -410,7 +749,20 @@ export default function Home() {
           </div>
         )}
 
-        {/* 5. PIE DE PÁGINA */}
+        {/* 6. BOTÓN FLOTANTE WHATSAPP */}
+        <a
+          href={whatsappUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="fixed bottom-6 right-6 z-40 bg-[#25D366] hover:bg-[#20ba59] text-white p-3.5 rounded-full shadow-2xl transition-transform hover:scale-110 flex items-center justify-center border-2 border-white/20"
+          title="Chatear por WhatsApp"
+        >
+          <svg className="w-7 h-7" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z"/>
+          </svg>
+        </a>
+
+        {/* 7. PIE DE PÁGINA */}
         <footer className="border-t border-purple-900/30 bg-[#060814]/90 py-8 text-center text-xs text-slate-500 mt-12">
           <div className="flex justify-center items-center gap-4 mb-3">
             <a 
