@@ -14,6 +14,7 @@ interface Product {
   image_url: string;
   images?: string[];
   category?: string;
+  active?: boolean;
 }
 
 interface CartItem extends Product {
@@ -30,9 +31,18 @@ export default function Home() {
   const [loading, setLoading] = useState<boolean>(true);
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('Todas');
-  const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
   const [favorites, setFavorites] = useState<string[]>([]);
   
+  // Modal de Mi Cuenta / Registro
+  const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
+  const [authTab, setAuthTab] = useState<'login' | 'register'>('login');
+  const [showTermsModal, setShowTermsModal] = useState<boolean>(false);
+  const [regName, setRegName] = useState('');
+  const [regEmail, setRegEmail] = useState('');
+  const [regPhone, setRegPhone] = useState('');
+  const [regAcceptedTerms, setRegAcceptedTerms] = useState(false);
+  const [authMsg, setAuthMsg] = useState<{ type: 'ok' | 'error'; text: string } | null>(null);
+
   // Control del Carrusel Vertical de Banners
   const [currentSlide, setCurrentSlide] = useState<number>(0);
   const [showWhatsappBubble, setShowWhatsappBubble] = useState<boolean>(true);
@@ -46,15 +56,16 @@ export default function Home() {
   const [customerNeighborhood, setCustomerNeighborhood] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'transferencia' | 'efectivo'>('transferencia');
   const [notes, setNotes] = useState('');
+  const [isSubmittingOrder, setIsSubmittingOrder] = useState<boolean>(false);
 
   const defaultWhatsappMessage = encodeURIComponent(
     "Hola Omniverse Store, vi su catálogo web y me gustaría recibir asesoría para hacer un pedido. ¿Qué promociones tienen disponibles?"
   );
   const whatsappUrl = `https://api.whatsapp.com/send?phone=573057785317&text=${defaultWhatsappMessage}`;
   const instagramUrl = "https://www.instagram.com/omniverse_store01?exln=bHVjODYzbWRwNG0y&utm_source=qr";
-  const facebookUrl = "https://facebook.com"; // Puedes cambiar este enlace por el de tu página oficial
+  const facebookUrl = "https://facebook.com";
 
-  // Slides del banner interactivo
+  // Slides del banner
   const bannerSlides = [
     {
       id: 0,
@@ -96,7 +107,7 @@ export default function Home() {
           description: 'Lleva tu experiencia de juego y entretenimiento al siguiente nivel con ultra baja latencia (30 ms) y peso de 169g.',
           full_description: `Lleva tu experiencia de juego y entretenimiento al siguiente nivel.\n\nDiseñados para largas sesiones sin fatiga, estos audífonos combinan libertad inalámbrica, máxima comodidad y rendimiento de nivel competitivo. Con un peso pluma de tan solo 169 gramos, prácticamente olvidarás que los llevas puestos.\n\nGracias a su tecnología de ultra baja latencia (30 ms), escucharás cada paso, disparo y efecto en tiempo real, dándote la ventaja que necesitas en tus partidas. Además, su versatilidad de conexión 3 en 1 (dongle USB/Tipo-C y modo inalámbrico) te permite alternar fácilmente entre PC, consolas y dispositivos móviles sin complicaciones.`,
           price: 165000,
-          stock: 10,
+          stock: 8,
           image_url: '/audifonosgamer1.png',
           images: [
             '/audifonosgamer1.png',
@@ -104,6 +115,7 @@ export default function Home() {
             '/audifonosgamer3.png',
           ],
           category: 'Tecnología',
+          active: true
         };
 
         let loadedProducts: Product[] = [];
@@ -125,7 +137,6 @@ export default function Home() {
     fetchProducts();
   }, []);
 
-  // Transición automática suave del carrusel cada 6 segundos
   useEffect(() => {
     const timer = setInterval(() => {
       setCurrentSlide((prev) => (prev + 1) % bannerSlides.length);
@@ -134,9 +145,11 @@ export default function Home() {
   }, [bannerSlides.length]);
 
   const addToCart = (product: Product) => {
+    if (product.stock <= 0) return;
     setCart((prev) => {
       const existing = prev.find((item) => item.id === product.id);
       if (existing) {
+        if (existing.quantity >= product.stock) return prev;
         return prev.map((item) =>
           item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
         );
@@ -152,6 +165,7 @@ export default function Home() {
         .map((item) => {
           if (item.id === id) {
             const newQty = item.quantity + delta;
+            if (newQty > item.stock) return item;
             return newQty > 0 ? { ...item, quantity: newQty } : null;
           }
           return item;
@@ -189,13 +203,46 @@ export default function Home() {
     const matchesCategory =
       selectedCategory === 'Todas' ||
       (product.category && product.category.toLowerCase() === selectedCategory.toLowerCase());
-    return matchesSearch && matchesCategory;
+    const isActive = product.active !== false;
+    return matchesSearch && matchesCategory && isActive;
   });
 
-  const handleCheckoutSubmit = (e: React.FormEvent) => {
+  // Guardar pedido en Supabase y abrir WhatsApp
+  const handleCheckoutSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (cart.length === 0) return;
+    if (cart.length === 0 || isSubmittingOrder) return;
 
+    setIsSubmittingOrder(true);
+
+    const itemsPayload = cart.map((c) => ({
+      id: c.id,
+      title: c.title,
+      price: c.price,
+      quantity: c.quantity,
+    }));
+
+    try {
+      // 1. Guardar la orden en la tabla orders de Supabase
+      await supabase.from('orders').insert([
+        {
+          customer_name: customerName,
+          customer_phone: customerPhone,
+          customer_city: customerCity,
+          delivery_type: deliveryType,
+          customer_address: deliveryType === 'domicilio' ? customerAddress : '',
+          customer_neighborhood: deliveryType === 'domicilio' ? customerNeighborhood : '',
+          payment_method: paymentMethod,
+          notes: notes,
+          items: itemsPayload,
+          total: cartTotal,
+          status: 'pendiente',
+        },
+      ]);
+    } catch (err) {
+      console.error('Error al registrar pedido:', err);
+    }
+
+    // 2. Armar mensaje de WhatsApp
     const itemsText = cart
       .map(
         (item, index) =>
@@ -219,19 +266,54 @@ export default function Home() {
 
     msg += `\n*PRODUCTOS:*\n${itemsText}\n\n`;
     msg += `*TOTAL A PAGAR:* $${cartTotal.toLocaleString('es-CO')} COP\n\n`;
-    msg += `Hola, confirmo los datos de mi pedido para coordinar el pago y envío.`;
+    msg += `Hola, confirmo los datos de mi pedido para coordinar el pago y despacho.`;
 
     const finalUrl = `https://api.whatsapp.com/send?phone=573057785317&text=${encodeURIComponent(msg)}`;
     window.open(finalUrl, '_blank');
 
+    setIsSubmittingOrder(false);
     setIsCheckoutOpen(false);
     setIsCartOpen(false);
+  };
+
+  // Registro de usuario con Habeas Data
+  const handleRegisterSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!regAcceptedTerms) {
+      setAuthMsg({ type: 'error', text: 'Debes aceptar los Términos y la Política de Tratamiento de Datos Personales.' });
+      return;
+    }
+
+    try {
+      const { error } = await supabase.from('profiles').insert([
+        {
+          full_name: regName,
+          email: regEmail,
+          phone: regPhone,
+          accepted_terms: true,
+          accepted_data_policy: true,
+          accepted_marketing: true,
+        },
+      ]);
+
+      if (error) {
+        setAuthMsg({ type: 'error', text: 'Error al registrar: Puede que este correo ya esté registrado.' });
+      } else {
+        setAuthMsg({ type: 'ok', text: '¡Registro exitoso! Ya haces parte de la comunidad Omniverse Store.' });
+        setTimeout(() => {
+          setShowAuthModal(false);
+          setAuthMsg(null);
+        }, 2000);
+      }
+    } catch {
+      setAuthMsg({ type: 'error', text: 'Hubo un error al procesar el registro.' });
+    }
   };
 
   return (
     <div className="relative min-h-screen text-slate-100 flex flex-col font-sans selection:bg-purple-600 selection:text-white bg-[#060814]">
       
-      {/* FONDO GALÁCTICO */}
+      {/* FONDO */}
       <div 
         className="fixed inset-0 pointer-events-none z-0 bg-cover bg-center opacity-65"
         style={{ backgroundImage: "url('/fondo.png')" }}
@@ -281,7 +363,7 @@ export default function Home() {
             {/* Accesos de Navegación */}
             <div className="flex items-center gap-2 md:gap-3">
               <button
-                onClick={() => setShowAuthModal(true)}
+                onClick={() => { setShowAuthModal(true); setAuthTab('login'); setAuthMsg(null); }}
                 className="flex items-center gap-1.5 text-xs md:text-sm text-gray-300 hover:text-white px-3 py-2 rounded-xl hover:bg-white/5 transition-colors"
               >
                 <svg className="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -319,7 +401,6 @@ export default function Home() {
 
           </div>
 
-          {/* Buscador móvil */}
           <div className="mt-2 sm:hidden">
             <input
               type="text"
@@ -334,13 +415,10 @@ export default function Home() {
         {/* 2. CONTENIDO PRINCIPAL */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 w-full flex-1">
           
-          {/* Fila Superior: Carrusel Vertical + Redes Sociales Destacadas */}
+          {/* Carrusel Vertical + Redes Sociales */}
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-8">
             
-            {/* Carrusel Deslizable Vertical de Banners */}
             <div className="lg:col-span-3 rounded-[32px] overflow-hidden border border-purple-500/40 shadow-[0_0_35px_rgba(147,51,234,0.35)] relative bg-[#0e0c24] h-[260px] sm:h-[300px] flex items-center group">
-              
-              {/* Contenedor con animación vertical */}
               <div 
                 className="w-full h-full transition-transform duration-700 ease-in-out flex flex-col"
                 style={{ transform: `translateY(-${currentSlide * 100}%)` }}
@@ -381,25 +459,24 @@ export default function Home() {
                 ))}
               </div>
 
-              {/* Controles Verticales (Flechas de navegación) */}
+              {/* Controles verticales */}
               <div className="absolute right-4 top-1/2 -translate-y-1/2 flex flex-col gap-2 z-20 opacity-80 group-hover:opacity-100 transition-opacity">
                 <button
                   onClick={() => setCurrentSlide((prev) => (prev - 1 + bannerSlides.length) % bannerSlides.length)}
                   className="w-8 h-8 rounded-full bg-black/60 hover:bg-purple-600 border border-purple-500/40 text-white flex items-center justify-center text-xs backdrop-blur-md transition-all shadow-md active:scale-90"
-                  title="Anuncio anterior"
+                  title="Anterior"
                 >
                   ▲
                 </button>
                 <button
                   onClick={() => setCurrentSlide((prev) => (prev + 1) % bannerSlides.length)}
                   className="w-8 h-8 rounded-full bg-black/60 hover:bg-purple-600 border border-purple-500/40 text-white flex items-center justify-center text-xs backdrop-blur-md transition-all shadow-md active:scale-90"
-                  title="Siguiente anuncio"
+                  title="Siguiente"
                 >
                   ▼
                 </button>
               </div>
 
-              {/* Puntos de paginación vertical */}
               <div className="absolute left-4 top-1/2 -translate-y-1/2 flex flex-col gap-2 z-20">
                 {bannerSlides.map((_, idx) => (
                   <button
@@ -413,20 +490,16 @@ export default function Home() {
                   />
                 ))}
               </div>
-
             </div>
 
-            {/* Panel de Redes Sociales Oficiales y Confianza */}
+            {/* Redes Sociales Oficiales */}
             <div className="flex flex-col gap-3 justify-between">
-              
-              {/* Bloque Destacado de Redes Oficiales */}
               <div className="bg-[#0d122b]/90 backdrop-blur-md border border-purple-500/30 rounded-2xl p-4 shadow-xl">
                 <span className="text-[11px] font-bold text-purple-300 uppercase tracking-wider block mb-3 text-center">
                   🌟 CANALES OFICIALES
                 </span>
                 
                 <div className="flex flex-col gap-2.5">
-                  {/* WhatsApp */}
                   <a
                     href={whatsappUrl}
                     target="_blank"
@@ -442,7 +515,6 @@ export default function Home() {
                     <span className="text-xs opacity-75 group-hover:translate-x-1 transition-transform">➜</span>
                   </a>
 
-                  {/* Instagram */}
                   <a
                     href={instagramUrl}
                     target="_blank"
@@ -458,7 +530,6 @@ export default function Home() {
                     <span className="text-xs opacity-75 group-hover:translate-x-1 transition-transform">➜</span>
                   </a>
 
-                  {/* Facebook */}
                   <a
                     href={facebookUrl}
                     target="_blank"
@@ -476,7 +547,6 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Insignias de Confianza */}
               <div className="bg-[#0d122b]/85 backdrop-blur-md border border-purple-500/25 rounded-2xl p-3 flex items-center gap-3 shadow-lg">
                 <div className="w-8 h-8 rounded-xl bg-blue-500/20 text-blue-400 flex items-center justify-center text-base">
                   🚚
@@ -496,14 +566,12 @@ export default function Home() {
                   <p className="text-[10px] text-slate-400">Garantía en cada orden</p>
                 </div>
               </div>
-
             </div>
           </div>
 
           {/* Categorías + Catálogo */}
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-8" id="catalogo">
             
-            {/* Sidebar Categorías */}
             <aside className="lg:col-span-1">
               <div className="bg-[#0d122b]/85 backdrop-blur-md border border-purple-500/25 rounded-2xl p-4 sticky top-24 shadow-xl">
                 <h3 className="text-xs font-bold text-purple-300 uppercase tracking-wider mb-4 flex items-center gap-2">
@@ -528,7 +596,6 @@ export default function Home() {
               </div>
             </aside>
 
-            {/* Listado de Productos */}
             <main className="lg:col-span-3">
               <div className="flex items-center justify-between mb-6">
                 <h2 className="text-xl sm:text-2xl font-bold text-white flex items-center gap-2">
@@ -553,12 +620,14 @@ export default function Home() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
                   {filteredProducts.map((product) => {
                     const isFav = favorites.includes(product.id);
+                    const isOutOfStock = product.stock <= 0;
+                    const isLowStock = product.stock > 0 && product.stock <= 2;
+
                     return (
                       <div
                         key={product.id}
                         className="bg-[#0d122b]/85 backdrop-blur-md rounded-2xl overflow-hidden border border-purple-500/25 flex flex-col hover:border-purple-400/60 transition-all duration-300 shadow-xl group hover:-translate-y-1"
                       >
-                        {/* Imagen (clic abre detalles del producto) */}
                         <div 
                           className="h-56 w-full bg-[#141a38] relative overflow-hidden cursor-pointer"
                           onClick={() => {
@@ -569,8 +638,21 @@ export default function Home() {
                           <img
                             src={product.image_url || 'https://via.placeholder.com/400'}
                             alt={product.title}
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                            className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 ${isOutOfStock ? 'grayscale opacity-60' : ''}`}
                           />
+
+                          {/* Alerta visual de Stock */}
+                          {isLowStock && (
+                            <span className="absolute bottom-3 left-3 bg-amber-500/90 text-black text-[10px] font-black px-2.5 py-1 rounded-full shadow-md">
+                              🔥 ¡Solo quedan {product.stock}!
+                            </span>
+                          )}
+                          {isOutOfStock && (
+                            <span className="absolute bottom-3 left-3 bg-red-600/90 text-white text-[10px] font-black px-2.5 py-1 rounded-full shadow-md">
+                              ❌ Agotado
+                            </span>
+                          )}
+
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
@@ -585,7 +667,6 @@ export default function Home() {
                           </button>
                         </div>
 
-                        {/* Detalles */}
                         <div className="p-5 flex-1 flex flex-col justify-between">
                           <div 
                             className="cursor-pointer"
@@ -607,9 +688,14 @@ export default function Home() {
                             </div>
                             <button
                               onClick={() => addToCart(product)}
-                              className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-medium py-2.5 px-4 rounded-xl transition duration-200 shadow-lg shadow-purple-900/30 active:scale-95 flex items-center justify-center gap-2 text-sm cursor-pointer"
+                              disabled={isOutOfStock}
+                              className={`w-full font-medium py-2.5 px-4 rounded-xl transition duration-200 text-sm flex items-center justify-center gap-2 ${
+                                isOutOfStock
+                                  ? 'bg-slate-700 text-slate-400 cursor-not-allowed'
+                                  : 'bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white shadow-lg shadow-purple-900/30 active:scale-95 cursor-pointer'
+                              }`}
                             >
-                              <span>Añadir al Carrito</span>
+                              <span>{isOutOfStock ? 'Agotado' : 'Añadir al Carrito'}</span>
                               <span>🛒</span>
                             </button>
                           </div>
@@ -623,7 +709,7 @@ export default function Home() {
           </div>
         </div>
 
-        {/* 3. MODAL DE VISTA DETALLADA DEL PRODUCTO */}
+        {/* 3. MODAL DETALLE DE PRODUCTO */}
         {selectedProduct && (
           <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
             <div className="bg-[#0b0e24] border border-purple-500/40 rounded-3xl max-w-3xl w-full p-6 sm:p-8 relative shadow-2xl my-8">
@@ -669,9 +755,17 @@ export default function Home() {
 
                 <div className="flex flex-col justify-between h-full">
                   <div>
-                    <span className="inline-block bg-purple-500/20 text-purple-300 text-xs px-2.5 py-0.5 rounded-full mb-2 border border-purple-500/30">
-                      {selectedProduct.category || 'Tecnología'}
-                    </span>
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="bg-purple-500/20 text-purple-300 text-xs px-2.5 py-0.5 rounded-full border border-purple-500/30">
+                        {selectedProduct.category || 'Tecnología'}
+                      </span>
+                      {selectedProduct.stock <= 2 && selectedProduct.stock > 0 && (
+                        <span className="bg-amber-500/20 text-amber-300 text-xs px-2 py-0.5 rounded-full border border-amber-500/30">
+                          Quedan {selectedProduct.stock} uds
+                        </span>
+                      )}
+                    </div>
+
                     <h3 className="text-xl sm:text-2xl font-bold text-white mb-2 leading-snug">
                       {selectedProduct.title}
                     </h3>
@@ -689,19 +783,23 @@ export default function Home() {
                       addToCart(selectedProduct);
                       setSelectedProduct(null);
                     }}
-                    className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-bold py-3.5 rounded-xl transition duration-200 shadow-xl shadow-purple-900/40 text-sm flex items-center justify-center gap-2 active:scale-95 cursor-pointer"
+                    disabled={selectedProduct.stock <= 0}
+                    className={`w-full font-bold py-3.5 rounded-xl transition duration-200 text-sm flex items-center justify-center gap-2 ${
+                      selectedProduct.stock <= 0
+                        ? 'bg-slate-700 text-slate-400 cursor-not-allowed'
+                        : 'bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white shadow-xl shadow-purple-900/40 active:scale-95 cursor-pointer'
+                    }`}
                   >
-                    <span>Añadir al Carrito</span>
+                    <span>{selectedProduct.stock <= 0 ? 'Producto Agotado' : 'Añadir al Carrito'}</span>
                     <span>🛒</span>
                   </button>
                 </div>
-
               </div>
             </div>
           </div>
         )}
 
-        {/* 4. PANEL LATERAL DESLIZABLE (DRAWER DEL CARRITO) */}
+        {/* 4. DRAWER DEL CARRITO */}
         {isCartOpen && (
           <div className="fixed inset-0 z-50 overflow-hidden">
             <div 
@@ -799,7 +897,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* 5. MODAL / FORMULARIO DE CHECKOUT */}
+        {/* 5. CHECKOUT (GUARDA EN SUPABASE Y ENVÍA A WHATSAPP) */}
         {isCheckoutOpen && (
           <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
             <div className="bg-[#0d122b] border border-purple-500/40 rounded-3xl max-w-lg w-full p-6 sm:p-8 relative shadow-2xl my-8">
@@ -819,7 +917,6 @@ export default function Home() {
               </p>
 
               <form onSubmit={handleCheckoutSubmit} className="space-y-4 text-xs sm:text-sm">
-                
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-slate-300 font-semibold mb-1">Nombre Completo *</label>
@@ -944,54 +1041,192 @@ export default function Home() {
 
                 <button
                   type="submit"
+                  disabled={isSubmittingOrder}
                   className="w-full bg-[#25D366] hover:bg-[#20ba59] text-white font-bold py-3.5 rounded-xl transition duration-200 shadow-xl shadow-emerald-900/30 text-sm flex items-center justify-center gap-2 active:scale-95 cursor-pointer"
                 >
                   <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
                     <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z"/>
                   </svg>
-                  <span>Confirmar Pedido por WhatsApp</span>
+                  <span>{isSubmittingOrder ? 'Procesando...' : 'Confirmar Pedido por WhatsApp'}</span>
                 </button>
               </form>
             </div>
           </div>
         )}
 
-        {/* 6. MODAL CUENTA */}
+        {/* 6. MODAL MI CUENTA / REGISTRO CON HABEAS DATA */}
         {showAuthModal && (
-          <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="bg-[#0d122b] border border-purple-500/40 rounded-2xl max-w-sm w-full p-6 relative shadow-2xl">
+          <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-[#0d122b] border border-purple-500/40 rounded-2xl max-w-md w-full p-6 relative shadow-2xl">
               <button
                 onClick={() => setShowAuthModal(false)}
                 className="absolute top-4 right-4 text-slate-400 hover:text-white"
               >
                 ✕
               </button>
-              <h3 className="text-xl font-bold text-white mb-2">Mi Cuenta</h3>
-              <p className="text-xs text-slate-400 mb-6">Inicia sesión o regístrate para gestionar tus compras.</p>
-              
-              <div className="space-y-3">
-                <input
-                  type="email"
-                  placeholder="Correo electrónico"
-                  className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-purple-400"
-                />
-                <input
-                  type="password"
-                  placeholder="Contraseña"
-                  className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-purple-400"
-                />
-                <button className="w-full bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold py-2.5 rounded-xl text-sm transition active:scale-95 shadow-md">
-                  Ingresar
+
+              {/* Pestañas Login vs Registro */}
+              <div className="flex border-b border-purple-500/20 mb-5">
+                <button
+                  onClick={() => { setAuthTab('login'); setAuthMsg(null); }}
+                  className={`flex-1 py-2 text-sm font-bold border-b-2 transition ${
+                    authTab === 'login' ? 'border-purple-400 text-white' : 'border-transparent text-slate-400'
+                  }`}
+                >
+                  Iniciar Sesión
+                </button>
+                <button
+                  onClick={() => { setAuthTab('register'); setAuthMsg(null); }}
+                  className={`flex-1 py-2 text-sm font-bold border-b-2 transition ${
+                    authTab === 'register' ? 'border-purple-400 text-white' : 'border-transparent text-slate-400'
+                  }`}
+                >
+                  Crear Cuenta
                 </button>
               </div>
+
+              {authMsg && (
+                <div className={`p-3 rounded-xl mb-4 text-xs font-semibold ${
+                  authMsg.type === 'ok' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' : 'bg-red-500/20 text-red-300 border border-red-500/40'
+                }`}>
+                  {authMsg.text}
+                </div>
+              )}
+
+              {authTab === 'login' ? (
+                <form className="space-y-3">
+                  <p className="text-xs text-slate-400 mb-2">Ingresa a tu cuenta para consultar tus pedidos.</p>
+                  <input
+                    type="email"
+                    placeholder="Correo electrónico"
+                    required
+                    className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-purple-400"
+                  />
+                  <input
+                    type="password"
+                    placeholder="Contraseña"
+                    required
+                    className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-purple-400"
+                  />
+                  <button className="w-full bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold py-2.5 rounded-xl text-sm transition active:scale-95 shadow-md">
+                    Ingresar
+                  </button>
+                </form>
+              ) : (
+                <form onSubmit={handleRegisterSubmit} className="space-y-3 text-xs">
+                  <p className="text-slate-400 mb-1">Regístrate para recibir descuentos exclusivos y novedades.</p>
+                  
+                  <div>
+                    <label className="block text-slate-300 font-semibold mb-1">Nombre Completo *</label>
+                    <input
+                      type="text"
+                      required
+                      value={regName}
+                      onChange={(e) => setRegName(e.target.value)}
+                      placeholder="Ej. Laura Gómez"
+                      className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3.5 py-2 text-white focus:outline-none focus:border-purple-400"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-300 font-semibold mb-1">Correo Electrónico *</label>
+                    <input
+                      type="email"
+                      required
+                      value={regEmail}
+                      onChange={(e) => setRegEmail(e.target.value)}
+                      placeholder="laura@ejemplo.com"
+                      className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3.5 py-2 text-white focus:outline-none focus:border-purple-400"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-300 font-semibold mb-1">Teléfono / WhatsApp *</label>
+                    <input
+                      type="tel"
+                      required
+                      value={regPhone}
+                      onChange={(e) => setRegPhone(e.target.value)}
+                      placeholder="300 123 4567"
+                      className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3.5 py-2 text-white focus:outline-none focus:border-purple-400"
+                    />
+                  </div>
+
+                  {/* Casilla Habeas Data */}
+                  <div className="flex items-start gap-2 pt-2 border-t border-purple-500/20">
+                    <input
+                      type="checkbox"
+                      id="terms"
+                      checked={regAcceptedTerms}
+                      onChange={(e) => setRegAcceptedTerms(e.target.checked)}
+                      className="mt-0.5 rounded border-purple-500 text-purple-600 focus:ring-purple-500 cursor-pointer"
+                    />
+                    <label htmlFor="terms" className="text-[11px] text-slate-300 leading-tight">
+                      Acepto los{' '}
+                      <button
+                        type="button"
+                        onClick={() => setShowTermsModal(true)}
+                        className="text-purple-400 underline font-semibold"
+                      >
+                        Términos y la Política de Tratamiento de Datos Personales
+                      </button>{' '}
+                      para recibir información comercial y de pedidos (Ley 1581 de 2012).
+                    </label>
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="w-full bg-gradient-to-r from-blue-600 to-purple-600 text-white font-bold py-2.5 rounded-xl text-sm transition active:scale-95 shadow-md mt-2"
+                  >
+                    Registrarme
+                  </button>
+                </form>
+              )}
             </div>
           </div>
         )}
 
-        {/* 7. BOTÓN FLOTANTE WHATSAPP CON BURBUJA LLAMATIVA */}
+        {/* 7. MODAL DE POLÍTICA DE TRATAMIENTO DE DATOS */}
+        {showTermsModal && (
+          <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
+            <div className="bg-[#0b0e24] border border-purple-500/40 rounded-2xl max-w-lg w-full p-6 relative shadow-2xl max-h-[80vh] flex flex-col">
+              <button
+                onClick={() => setShowTermsModal(false)}
+                className="absolute top-4 right-4 text-slate-400 hover:text-white"
+              >
+                ✕
+              </button>
+              <h3 className="text-base font-bold text-white mb-3">
+                Política de Tratamiento de Datos Personales
+              </h3>
+              <div className="text-xs text-slate-300 space-y-2.5 overflow-y-auto pr-2 leading-relaxed flex-1">
+                <p>
+                  En cumplimiento de la Ley 1581 de 2012 y el Decreto 1377 de 2013 de la República de Colombia, <strong>Omniverse Store</strong> informa que los datos personales suministrados (nombre, correo, teléfono y dirección) serán tratados de manera confidencial y segura.
+                </p>
+                <p>
+                  <strong>Finalidad:</strong> Los datos se emplearán exclusivamente para:
+                </p>
+                <ul className="list-disc pl-4 space-y-1">
+                  <li>Gestionar el procesamiento, despacho y entrega de sus pedidos.</li>
+                  <li>Atención al cliente y confirmación de pagos vía WhatsApp.</li>
+                  <li>Envío de comunicaciones promocionales, descuentos y lanzamientos de catálogo.</li>
+                </ul>
+                <p>
+                  <strong>Derechos del Titular:</strong> Usted tiene derecho a conocer, actualizar, rectificar y revocar la autorización de sus datos personales en cualquier momento escribiendo a nuestros canales oficiales de atención.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowTermsModal(false)}
+                className="mt-4 bg-purple-600 hover:bg-purple-500 text-white py-2 rounded-xl text-xs font-bold transition"
+              >
+                Entendido y de acuerdo
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* 8. BOTÓN FLOTANTE WHATSAPP CON BURBUJA */}
         <div className="fixed bottom-6 right-6 z-40 flex items-end gap-3 pointer-events-auto">
-          
-          {/* Burbuja de invitación */}
           {showWhatsappBubble && (
             <div className="hidden sm:flex items-center gap-2 bg-[#0d122b]/95 border border-emerald-500/40 px-3.5 py-2 rounded-2xl shadow-2xl backdrop-blur-md animate-bounce">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
@@ -1008,7 +1243,6 @@ export default function Home() {
             </div>
           )}
 
-          {/* Botón flotante verde */}
           <a
             href={whatsappUrl}
             target="_blank"
@@ -1023,7 +1257,7 @@ export default function Home() {
           </a>
         </div>
 
-        {/* 8. PIE DE PÁGINA */}
+        {/* 9. PIE DE PÁGINA */}
         <footer className="border-t border-purple-900/30 bg-[#060814]/90 py-8 text-center text-xs text-slate-500 mt-12">
           <div className="flex flex-wrap justify-center items-center gap-4 mb-3">
             <a 
