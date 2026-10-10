@@ -61,7 +61,7 @@ export default function AdminDashboard() {
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [copiedEmails, setCopiedEmails] = useState<boolean>(false);
 
-  // Verificar sesión existente en el navegador
+  // Verificar sesión existente
   useEffect(() => {
     async function checkSession() {
       const { data: { session } } = await supabase.auth.getSession();
@@ -75,14 +75,14 @@ export default function AdminDashboard() {
     checkSession();
   }, []);
 
-  // Función para procesar el inicio de sesión
+  // Login sin exponer correo por defecto
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoggingIn(true);
     setLoginError(null);
 
     if (loginEmail.trim().toLowerCase() !== 'tiradogalvismauricio68@gmail.com') {
-      setLoginError('Acceso denegado: este correo no tiene permisos de administrador.');
+      setLoginError('Credenciales o permisos no válidos.');
       setIsLoggingIn(false);
       return;
     }
@@ -94,7 +94,7 @@ export default function AdminDashboard() {
       });
 
       if (error) {
-        setLoginError('Credenciales incorrectas: ' + error.message);
+        setLoginError('Acceso denegado: ' + error.message);
       } else if (data.session) {
         setIsAuthenticated(true);
       }
@@ -105,13 +105,11 @@ export default function AdminDashboard() {
     }
   };
 
-  // Cerrar sesión
   const handleLogout = async () => {
     await supabase.auth.signOut();
     setIsAuthenticated(false);
   };
 
-  // Cargar datos de Supabase una vez autenticado
   const fetchData = async () => {
     setLoading(true);
     try {
@@ -211,7 +209,7 @@ export default function AdminDashboard() {
     );
   }
 
-  // VENTANA DE LOGIN OBLIGATORIA
+  // LOGIN CON PLACEHOLDER NEUTRO Y AUTOCOMPLETE OFF
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-[#060814] flex items-center justify-center p-4">
@@ -228,15 +226,16 @@ export default function AdminDashboard() {
             </div>
           )}
 
-          <form onSubmit={handleLogin} className="space-y-4 text-xs">
+          <form onSubmit={handleLogin} className="space-y-4 text-xs" autoComplete="off">
             <div>
-              <label className="block text-slate-300 font-semibold mb-1">Correo de Administrador</label>
+              <label className="block text-slate-300 font-semibold mb-1">Correo Electrónico</label>
               <input
                 type="email"
                 required
+                autoComplete="off"
                 value={loginEmail}
                 onChange={(e) => setLoginEmail(e.target.value)}
-                placeholder="tiradogalvismauricio68@gmail.com"
+                placeholder="ejemplo@correo.com"
                 className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-purple-400 text-sm"
               />
             </div>
@@ -246,6 +245,7 @@ export default function AdminDashboard() {
               <input
                 type="password"
                 required
+                autoComplete="new-password"
                 value={loginPassword}
                 onChange={(e) => setLoginPassword(e.target.value)}
                 placeholder="••••••••••••"
@@ -272,7 +272,7 @@ export default function AdminDashboard() {
     );
   }
 
-  // MÉTRICAS Y DATOS
+  // Cálculos de métricas
   const completedOrders = orders.filter((o) => o.status === 'completado');
   const pendingOrders = orders.filter((o) => o.status === 'pendiente');
   const totalRevenue = completedOrders.reduce((acc, o) => acc + Number(o.total || 0), 0);
@@ -284,14 +284,12 @@ export default function AdminDashboard() {
 
   return (
     <div className="min-h-screen bg-[#060814] text-slate-100 flex flex-col font-sans">
-      
-      {/* BARRA SUPERIOR ADMIN */}
       <header className="sticky top-0 z-30 bg-[#0d122b]/90 backdrop-blur-md border-b border-purple-500/20 px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <span className="text-xl">⚙️</span>
           <div>
             <h1 className="text-base font-bold text-white leading-tight">Panel de Administración</h1>
-            <p className="text-[11px] text-purple-300">Sesión iniciada: tiradogalvismauricio68@gmail.com</p>
+            <p className="text-[11px] text-purple-300">Sesión Administrativa Activa</p>
           </div>
         </div>
 
@@ -317,7 +315,6 @@ export default function AdminDashboard() {
         </div>
       </header>
 
-      {/* PESTAÑAS */}
       <div className="bg-[#0b0e24] border-b border-purple-500/20 px-6">
         <div className="max-w-7xl mx-auto flex gap-2 overflow-x-auto py-2.5">
           <button
@@ -373,7 +370,6 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* CONTENIDO PRINCIPAL */}
       <main className="max-w-7xl mx-auto w-full p-6 flex-1">
         {loading ? (
           <div className="py-20 text-center text-slate-400 flex flex-col items-center justify-center gap-3">
@@ -382,7 +378,6 @@ export default function AdminDashboard() {
           </div>
         ) : (
           <>
-            {/* ALERTA DE STOCK */}
             {lowStockProducts.length > 0 && (
               <div className="mb-6 bg-rose-950/40 border border-rose-500/50 rounded-2xl p-4 shadow-lg">
                 <div className="flex items-center gap-2 mb-2 text-rose-300 font-bold text-sm">
@@ -410,7 +405,6 @@ export default function AdminDashboard() {
               </div>
             )}
 
-            {/* TAB: DASHBOARD */}
             {activeTab === 'dashboard' && (
               <div className="space-y-6">
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -498,7 +492,6 @@ export default function AdminDashboard() {
               </div>
             )}
 
-            {/* TAB: PEDIDOS */}
             {activeTab === 'orders' && (
               <div className="space-y-4">
                 <h3 className="text-sm font-bold text-white mb-2">Historial Completo de Pedidos</h3>
@@ -582,7 +575,6 @@ export default function AdminDashboard() {
               </div>
             )}
 
-            {/* TAB: INVENTARIO */}
             {activeTab === 'inventory' && (
               <div className="space-y-4">
                 <div className="flex justify-between items-center mb-2">
@@ -609,7 +601,6 @@ export default function AdminDashboard() {
                       </div>
 
                       <div className="space-y-3 pt-3 border-t border-purple-500/20">
-                        {/* Control de Stock */}
                         <div className="flex items-center justify-between">
                           <span className="text-xs text-slate-300">Unidades en Stock:</span>
                           <div className="flex items-center gap-2">
@@ -634,7 +625,6 @@ export default function AdminDashboard() {
                           </div>
                         </div>
 
-                        {/* Switch Activo / Deshabilitado */}
                         <div className="flex items-center justify-between">
                           <span className="text-xs text-slate-300">Visible en Tienda:</span>
                           <button
@@ -655,7 +645,6 @@ export default function AdminDashboard() {
               </div>
             )}
 
-            {/* TAB: CLIENTES */}
             {activeTab === 'customers' && (
               <div className="space-y-4">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-2">

@@ -65,7 +65,6 @@ export default function Home() {
   const instagramUrl = "https://www.instagram.com/omniverse_store01?exln=bHVjODYzbWRwNG0y&utm_source=qr";
   const facebookUrl = "https://facebook.com";
 
-  // Slides del banner
   const bannerSlides = [
     {
       id: 0,
@@ -93,6 +92,7 @@ export default function Home() {
     }
   ];
 
+  // CARGAR PRODUCTOS DIRECTAMENTE DE SUPABASE (SIN DUPLICADOS)
   useEffect(() => {
     async function fetchProducts() {
       try {
@@ -101,32 +101,24 @@ export default function Home() {
           console.error('Error al cargar productos:', error.message);
         }
 
-        const officialAudifonos: Product = {
-          id: 'audifonos-gamer-01',
-          title: 'Audífonos Inalámbricos Gamer Pro Ultra-Light',
-          description: 'Lleva tu experiencia de juego y entretenimiento al siguiente nivel con ultra baja latencia (30 ms) y peso de 169g.',
-          full_description: `Lleva tu experiencia de juego y entretenimiento al siguiente nivel.\n\nDiseñados para largas sesiones sin fatiga, estos audífonos combinan libertad inalámbrica, máxima comodidad y rendimiento de nivel competitivo. Con un peso pluma de tan solo 169 gramos, prácticamente olvidarás que los llevas puestos.\n\nGracias a su tecnología de ultra baja latencia (30 ms), escucharás cada paso, disparo y efecto en tiempo real, dándote la ventaja que necesitas en tus partidas. Además, su versatilidad de conexión 3 en 1 (dongle USB/Tipo-C y modo inalámbrico) te permite alternar fácilmente entre PC, consolas y dispositivos móviles sin complicaciones.`,
-          price: 165000,
-          stock: 8,
-          image_url: '/audifonosgamer1.png',
-          images: [
-            '/audifonosgamer1.png',
-            '/audifonosgamer2.png',
-            '/audifonosgamer3.png',
-          ],
-          category: 'Tecnología',
-          active: true
-        };
-
-        let loadedProducts: Product[] = [];
         if (data && data.length > 0) {
-          const filtered = data.filter((p: Product) => !p.title.toLowerCase().includes('audifonos'));
-          loadedProducts = [officialAudifonos, ...filtered];
+          // Asignar imágenes y detalles extendidos al producto real
+          const enriched = data.map((item: any) => {
+            const isAudifonos = item.title.toLowerCase().includes('audífonos') || item.title.toLowerCase().includes('audifonos');
+            return {
+              ...item,
+              images: isAudifonos
+                ? ['/audifonosgamer1.png', '/audifonosgamer2.png', '/audifonosgamer3.png']
+                : item.images || [item.image_url],
+              full_description: isAudifonos
+                ? `Lleva tu experiencia de juego y entretenimiento al siguiente nivel.\n\nDiseñados para largas sesiones sin fatiga, estos audífonos combinan libertad inalámbrica, máxima comodidad y rendimiento de nivel competitivo. Con un peso pluma de tan solo 169 gramos, prácticamente olvidarás que los llevas puestos.\n\nGracias a su tecnología de ultra baja latencia (30 ms), escucharás cada paso, disparo y efecto en tiempo real, dándote la ventaja que necesitas en tus partidas. Además, su versatilidad de conexión 3 en 1 (dongle USB/Tipo-C y modo inalámbrico) te permite alternar fácilmente entre PC, consolas y dispositivos móviles sin complicaciones.`
+                : item.description,
+            };
+          });
+          setProducts(enriched);
         } else {
-          loadedProducts = [officialAudifonos];
+          setProducts([]);
         }
-
-        setProducts(loadedProducts);
       } catch (err) {
         console.error('Excepción al consultar Supabase:', err);
       } finally {
@@ -196,6 +188,7 @@ export default function Home() {
     { name: 'Iluminación', icon: '💡' },
   ];
 
+  // FILTRADO DE PRODUCTOS (SOLO PRODUCTOS ACTIVOS)
   const filteredProducts = products.filter((product) => {
     const matchesSearch =
       product.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -207,7 +200,6 @@ export default function Home() {
     return matchesSearch && matchesCategory && isActive;
   });
 
-  // Guardar pedido en Supabase y abrir WhatsApp
   const handleCheckoutSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (cart.length === 0 || isSubmittingOrder) return;
@@ -222,7 +214,6 @@ export default function Home() {
     }));
 
     try {
-      // 1. Guardar la orden en la tabla orders de Supabase
       await supabase.from('orders').insert([
         {
           customer_name: customerName,
@@ -242,7 +233,6 @@ export default function Home() {
       console.error('Error al registrar pedido:', err);
     }
 
-    // 2. Armar mensaje de WhatsApp
     const itemsText = cart
       .map(
         (item, index) =>
@@ -276,7 +266,6 @@ export default function Home() {
     setIsCartOpen(false);
   };
 
-  // Registro de usuario con Habeas Data
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!regAcceptedTerms) {
@@ -288,7 +277,7 @@ export default function Home() {
       const { error } = await supabase.from('profiles').insert([
         {
           full_name: regName,
-          email: regEmail,
+          email: regEmail.trim().toLowerCase(),
           phone: regPhone,
           accepted_terms: true,
           accepted_data_policy: true,
@@ -297,12 +286,16 @@ export default function Home() {
       ]);
 
       if (error) {
-        setAuthMsg({ type: 'error', text: 'Error al registrar: Puede que este correo ya esté registrado.' });
+        setAuthMsg({ type: 'error', text: `Error al registrar: ${error.message}` });
       } else {
         setAuthMsg({ type: 'ok', text: '¡Registro exitoso! Ya haces parte de la comunidad Omniverse Store.' });
         setTimeout(() => {
           setShowAuthModal(false);
           setAuthMsg(null);
+          setRegName('');
+          setRegEmail('');
+          setRegPhone('');
+          setRegAcceptedTerms(false);
         }, 2000);
       }
     } catch {
@@ -327,7 +320,6 @@ export default function Home() {
         <header className="sticky top-0 z-40 bg-[#070a1a]/85 backdrop-blur-md border-b border-purple-500/20 px-4 py-3 md:px-8">
           <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
             
-            {/* Logo */}
             <div 
               className="flex items-center gap-2 cursor-pointer transition-transform hover:scale-105" 
               onClick={() => { setSelectedCategory('Todas'); setSearchTerm(''); }}
@@ -342,7 +334,6 @@ export default function Home() {
               />
             </div>
 
-            {/* Buscador */}
             <div className="flex-1 max-w-xl mx-2 hidden sm:block">
               <div className="relative">
                 <input
@@ -360,11 +351,10 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Accesos de Navegación */}
             <div className="flex items-center gap-2 md:gap-3">
               <button
                 onClick={() => { setShowAuthModal(true); setAuthTab('login'); setAuthMsg(null); }}
-                className="flex items-center gap-1.5 text-xs md:text-sm text-gray-300 hover:text-white px-3 py-2 rounded-xl hover:bg-white/5 transition-colors"
+                className="flex items-center gap-1.5 text-xs md:text-sm text-gray-300 hover:text-white px-3 py-2 rounded-xl hover:bg-white/5 transition-colors cursor-pointer"
               >
                 <svg className="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
@@ -384,7 +374,6 @@ export default function Home() {
                 )}
               </button>
 
-              {/* Botón Carrito */}
               <button 
                 onClick={() => setIsCartOpen(true)}
                 className="relative flex items-center gap-2 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white text-xs md:text-sm font-semibold px-4 py-2 rounded-xl transition-all shadow-lg shadow-purple-900/40 active:scale-95 cursor-pointer"
@@ -415,9 +404,7 @@ export default function Home() {
         {/* 2. CONTENIDO PRINCIPAL */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 w-full flex-1">
           
-          {/* Carrusel Vertical + Redes Sociales */}
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-8">
-            
             <div className="lg:col-span-3 rounded-[32px] overflow-hidden border border-purple-500/40 shadow-[0_0_35px_rgba(147,51,234,0.35)] relative bg-[#0e0c24] h-[260px] sm:h-[300px] flex items-center group">
               <div 
                 className="w-full h-full transition-transform duration-700 ease-in-out flex flex-col"
@@ -459,7 +446,6 @@ export default function Home() {
                 ))}
               </div>
 
-              {/* Controles verticales */}
               <div className="absolute right-4 top-1/2 -translate-y-1/2 flex flex-col gap-2 z-20 opacity-80 group-hover:opacity-100 transition-opacity">
                 <button
                   onClick={() => setCurrentSlide((prev) => (prev - 1 + bannerSlides.length) % bannerSlides.length)}
@@ -492,7 +478,6 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Redes Sociales Oficiales */}
             <div className="flex flex-col gap-3 justify-between">
               <div className="bg-[#0d122b]/90 backdrop-blur-md border border-purple-500/30 rounded-2xl p-4 shadow-xl">
                 <span className="text-[11px] font-bold text-purple-300 uppercase tracking-wider block mb-3 text-center">
@@ -582,7 +567,7 @@ export default function Home() {
                     <button
                       key={cat.name}
                       onClick={() => setSelectedCategory(cat.name)}
-                      className={`flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all text-left whitespace-nowrap ${
+                      className={`flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all text-left whitespace-nowrap cursor-pointer ${
                         selectedCategory === cat.name
                           ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-md shadow-purple-900/50'
                           : 'text-slate-300 hover:bg-white/5 hover:text-white'
@@ -612,9 +597,23 @@ export default function Home() {
                   <p>Cargando catálogo...</p>
                 </div>
               ) : filteredProducts.length === 0 ? (
-                <div className="text-center py-20 bg-[#0d122b]/60 backdrop-blur-md rounded-2xl border border-purple-500/20 text-slate-400">
-                  <p className="text-base font-semibold mb-1">No hay productos en esta categoría</p>
-                  <p className="text-xs">Pronto añadiremos más productos.</p>
+                /* MENSAJE DE PRÓXIMAMENTE PARA CATEGORÍAS VACÍAS */
+                <div className="text-center py-16 px-6 bg-[#0d122b]/75 backdrop-blur-md rounded-3xl border border-purple-500/30 text-slate-300 shadow-xl flex flex-col items-center justify-center">
+                  <div className="w-16 h-16 rounded-2xl bg-purple-500/10 border border-purple-500/30 flex items-center justify-center text-3xl mb-4 shadow-inner">
+                    🚀
+                  </div>
+                  <h3 className="text-lg font-bold text-white mb-2">
+                    ¡Próximamente en {selectedCategory !== 'Todas' ? selectedCategory : 'nuestra tienda'}!
+                  </h3>
+                  <p className="text-xs text-slate-400 max-w-md mb-6 leading-relaxed">
+                    Estamos preparando nuevos ingresos y productos exclusivos para esta sección. ¡Mantente atento a nuestros lanzamientos oficiales!
+                  </p>
+                  <button
+                    onClick={() => setSelectedCategory('Todas')}
+                    className="bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 border border-purple-500/40 px-5 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer"
+                  >
+                    Ver productos disponibles
+                  </button>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
@@ -641,7 +640,6 @@ export default function Home() {
                             className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 ${isOutOfStock ? 'grayscale opacity-60' : ''}`}
                           />
 
-                          {/* Alerta visual de Stock */}
                           {isLowStock && (
                             <span className="absolute bottom-3 left-3 bg-amber-500/90 text-black text-[10px] font-black px-2.5 py-1 rounded-full shadow-md">
                               🔥 ¡Solo quedan {product.stock}!
@@ -715,7 +713,7 @@ export default function Home() {
             <div className="bg-[#0b0e24] border border-purple-500/40 rounded-3xl max-w-3xl w-full p-6 sm:p-8 relative shadow-2xl my-8">
               <button
                 onClick={() => setSelectedProduct(null)}
-                className="absolute top-5 right-5 text-slate-400 hover:text-white text-xl p-1"
+                className="absolute top-5 right-5 text-slate-400 hover:text-white text-xl p-1 cursor-pointer"
               >
                 ✕
               </button>
@@ -815,7 +813,7 @@ export default function Home() {
                     </h2>
                     <button 
                       onClick={() => setIsCartOpen(false)}
-                      className="text-slate-400 hover:text-white p-1 text-xl"
+                      className="text-slate-400 hover:text-white p-1 text-xl cursor-pointer"
                     >
                       ✕
                     </button>
@@ -846,14 +844,14 @@ export default function Home() {
                             <div className="flex items-center gap-2 mt-2">
                               <button 
                                 onClick={() => updateQuantity(item.id, -1)}
-                                className="w-6 h-6 bg-[#1a204d] hover:bg-purple-600 rounded text-xs font-bold text-white flex items-center justify-center"
+                                className="w-6 h-6 bg-[#1a204d] hover:bg-purple-600 rounded text-xs font-bold text-white flex items-center justify-center cursor-pointer"
                               >
                                 -
                               </button>
                               <span className="text-xs font-semibold">{item.quantity}</span>
                               <button 
                                 onClick={() => updateQuantity(item.id, 1)}
-                                className="w-6 h-6 bg-[#1a204d] hover:bg-purple-600 rounded text-xs font-bold text-white flex items-center justify-center"
+                                className="w-6 h-6 bg-[#1a204d] hover:bg-purple-600 rounded text-xs font-bold text-white flex items-center justify-center cursor-pointer"
                               >
                                 +
                               </button>
@@ -861,7 +859,7 @@ export default function Home() {
                           </div>
                           <button 
                             onClick={() => removeFromCart(item.id)}
-                            className="text-red-400 hover:text-red-300 p-1 text-sm"
+                            className="text-red-400 hover:text-red-300 p-1 text-sm cursor-pointer"
                             title="Eliminar"
                           >
                             🗑️
@@ -897,13 +895,13 @@ export default function Home() {
           </div>
         )}
 
-        {/* 5. CHECKOUT (GUARDA EN SUPABASE Y ENVÍA A WHATSAPP) */}
+        {/* 5. CHECKOUT */}
         {isCheckoutOpen && (
           <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
             <div className="bg-[#0d122b] border border-purple-500/40 rounded-3xl max-w-lg w-full p-6 sm:p-8 relative shadow-2xl my-8">
               <button
                 onClick={() => setIsCheckoutOpen(false)}
-                className="absolute top-5 right-5 text-slate-400 hover:text-white text-lg"
+                className="absolute top-5 right-5 text-slate-400 hover:text-white text-lg cursor-pointer"
               >
                 ✕
               </button>
@@ -925,7 +923,7 @@ export default function Home() {
                       required
                       value={customerName}
                       onChange={(e) => setCustomerName(e.target.value)}
-                      placeholder="Ej. Juan Pérez"
+                      placeholder="Ej. Laura Gómez"
                       className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:border-purple-400"
                     />
                   </div>
@@ -999,7 +997,7 @@ export default function Home() {
                     <button
                       type="button"
                       onClick={() => setPaymentMethod('transferencia')}
-                      className={`p-2.5 rounded-xl border text-center transition font-medium ${
+                      className={`p-2.5 rounded-xl border text-center transition font-medium cursor-pointer ${
                         paymentMethod === 'transferencia'
                           ? 'border-purple-500 bg-purple-600/30 text-white'
                           : 'border-purple-500/20 bg-[#141a38] text-slate-400'
@@ -1010,7 +1008,7 @@ export default function Home() {
                     <button
                       type="button"
                       onClick={() => setPaymentMethod('efectivo')}
-                      className={`p-2.5 rounded-xl border text-center transition font-medium ${
+                      className={`p-2.5 rounded-xl border text-center transition font-medium cursor-pointer ${
                         paymentMethod === 'efectivo'
                           ? 'border-purple-500 bg-purple-600/30 text-white'
                           : 'border-purple-500/20 bg-[#141a38] text-slate-400'
@@ -1054,22 +1052,21 @@ export default function Home() {
           </div>
         )}
 
-        {/* 6. MODAL MI CUENTA / REGISTRO CON HABEAS DATA */}
+        {/* 6. MODAL MI CUENTA / REGISTRO */}
         {showAuthModal && (
           <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
             <div className="bg-[#0d122b] border border-purple-500/40 rounded-2xl max-w-md w-full p-6 relative shadow-2xl">
               <button
                 onClick={() => setShowAuthModal(false)}
-                className="absolute top-4 right-4 text-slate-400 hover:text-white"
+                className="absolute top-4 right-4 text-slate-400 hover:text-white cursor-pointer"
               >
                 ✕
               </button>
 
-              {/* Pestañas Login vs Registro */}
               <div className="flex border-b border-purple-500/20 mb-5">
                 <button
                   onClick={() => { setAuthTab('login'); setAuthMsg(null); }}
-                  className={`flex-1 py-2 text-sm font-bold border-b-2 transition ${
+                  className={`flex-1 py-2 text-sm font-bold border-b-2 transition cursor-pointer ${
                     authTab === 'login' ? 'border-purple-400 text-white' : 'border-transparent text-slate-400'
                   }`}
                 >
@@ -1077,7 +1074,7 @@ export default function Home() {
                 </button>
                 <button
                   onClick={() => { setAuthTab('register'); setAuthMsg(null); }}
-                  className={`flex-1 py-2 text-sm font-bold border-b-2 transition ${
+                  className={`flex-1 py-2 text-sm font-bold border-b-2 transition cursor-pointer ${
                     authTab === 'register' ? 'border-purple-400 text-white' : 'border-transparent text-slate-400'
                   }`}
                 >
@@ -1108,7 +1105,7 @@ export default function Home() {
                     required
                     className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-purple-400"
                   />
-                  <button className="w-full bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold py-2.5 rounded-xl text-sm transition active:scale-95 shadow-md">
+                  <button className="w-full bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold py-2.5 rounded-xl text-sm transition active:scale-95 shadow-md cursor-pointer">
                     Ingresar
                   </button>
                 </form>
@@ -1135,7 +1132,7 @@ export default function Home() {
                       required
                       value={regEmail}
                       onChange={(e) => setRegEmail(e.target.value)}
-                      placeholder="laura@ejemplo.com"
+                      placeholder="ejemplo@correo.com"
                       className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3.5 py-2 text-white focus:outline-none focus:border-purple-400"
                     />
                   </div>
@@ -1152,7 +1149,6 @@ export default function Home() {
                     />
                   </div>
 
-                  {/* Casilla Habeas Data */}
                   <div className="flex items-start gap-2 pt-2 border-t border-purple-500/20">
                     <input
                       type="checkbox"
@@ -1166,7 +1162,7 @@ export default function Home() {
                       <button
                         type="button"
                         onClick={() => setShowTermsModal(true)}
-                        className="text-purple-400 underline font-semibold"
+                        className="text-purple-400 underline font-semibold cursor-pointer"
                       >
                         Términos y la Política de Tratamiento de Datos Personales
                       </button>{' '}
@@ -1176,7 +1172,7 @@ export default function Home() {
 
                   <button
                     type="submit"
-                    className="w-full bg-gradient-to-r from-blue-600 to-purple-600 text-white font-bold py-2.5 rounded-xl text-sm transition active:scale-95 shadow-md mt-2"
+                    className="w-full bg-gradient-to-r from-blue-600 to-purple-600 text-white font-bold py-2.5 rounded-xl text-sm transition active:scale-95 shadow-md mt-2 cursor-pointer"
                   >
                     Registrarme
                   </button>
@@ -1186,13 +1182,13 @@ export default function Home() {
           </div>
         )}
 
-        {/* 7. MODAL DE POLÍTICA DE TRATAMIENTO DE DATOS */}
+        {/* 7. MODAL DE TRATAMIENTO DE DATOS */}
         {showTermsModal && (
           <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
             <div className="bg-[#0b0e24] border border-purple-500/40 rounded-2xl max-w-lg w-full p-6 relative shadow-2xl max-h-[80vh] flex flex-col">
               <button
                 onClick={() => setShowTermsModal(false)}
-                className="absolute top-4 right-4 text-slate-400 hover:text-white"
+                className="absolute top-4 right-4 text-slate-400 hover:text-white cursor-pointer"
               >
                 ✕
               </button>
@@ -1201,7 +1197,7 @@ export default function Home() {
               </h3>
               <div className="text-xs text-slate-300 space-y-2.5 overflow-y-auto pr-2 leading-relaxed flex-1">
                 <p>
-                  En cumplimiento de la Ley 1581 de 2012 y el Decreto 1377 de 2013 de la República de Colombia, <strong>Omniverse Store</strong> informa que los datos personales suministrados (nombre, correo, teléfono y dirección) serán tratados de manera confidencial y segura.
+                  En cumplimiento de la Ley 1581 de 2012 y el Decreto 1377 de 2013 de la República de Colombia, <strong>Omniverse Store</strong> informa que los datos personales suministrados serán tratados de manera confidencial y segura.
                 </p>
                 <p>
                   <strong>Finalidad:</strong> Los datos se emplearán exclusivamente para:
@@ -1217,7 +1213,7 @@ export default function Home() {
               </div>
               <button
                 onClick={() => setShowTermsModal(false)}
-                className="mt-4 bg-purple-600 hover:bg-purple-500 text-white py-2 rounded-xl text-xs font-bold transition"
+                className="mt-4 bg-purple-600 hover:bg-purple-500 text-white py-2 rounded-xl text-xs font-bold transition cursor-pointer"
               >
                 Entendido y de acuerdo
               </button>
@@ -1225,7 +1221,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* 8. BOTÓN FLOTANTE WHATSAPP CON BURBUJA */}
+        {/* 8. BOTÓN FLOTANTE WHATSAPP */}
         <div className="fixed bottom-6 right-6 z-40 flex items-end gap-3 pointer-events-auto">
           {showWhatsappBubble && (
             <div className="hidden sm:flex items-center gap-2 bg-[#0d122b]/95 border border-emerald-500/40 px-3.5 py-2 rounded-2xl shadow-2xl backdrop-blur-md animate-bounce">
@@ -1235,7 +1231,7 @@ export default function Home() {
               </span>
               <button
                 onClick={() => setShowWhatsappBubble(false)}
-                className="text-slate-400 hover:text-white text-xs ml-1"
+                className="text-slate-400 hover:text-white text-xs ml-1 cursor-pointer"
                 title="Cerrar"
               >
                 ✕
