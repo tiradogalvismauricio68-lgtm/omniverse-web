@@ -22,6 +22,22 @@ interface CartItem extends Product {
   quantity: number;
 }
 
+interface BannerSlide {
+  id: string;
+  type: 'image' | 'product' | 'social';
+  src?: string;
+  alt?: string;
+  product?: Product;
+  badge?: string;
+  title?: string;
+  price?: number;
+  description?: string;
+  image?: string;
+  btnText?: string;
+  link?: string;
+  gradient?: string;
+}
+
 export default function Home() {
   const [products, setProducts] = useState<Product[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -66,7 +82,6 @@ export default function Home() {
   const instagramUrl = "https://www.instagram.com/omniverse_store01?exln=bHVjODYzbWRwNG0y&utm_source=qr";
   const facebookUrl = "https://facebook.com";
 
-  // Cargar productos desde Supabase
   useEffect(() => {
     async function fetchProducts() {
       try {
@@ -99,21 +114,18 @@ export default function Home() {
     fetchProducts();
   }, []);
 
-  // Construcción de Diapositivas Dinámicas del Banner
-  const featuredProducts = products.filter((p) => p.featured && p.active !== false);
+  const featuredProducts = products.filter((p) => Boolean(p.featured) && p.active !== false);
 
-  const bannerSlides = [
-    // 1. Banner Principal de Imagen con bener001.png
+  const bannerSlides: BannerSlide[] = [
     {
       id: 'main-banner',
       type: 'image',
       src: '/bener001.png',
       alt: 'Omniverse Store Oficial'
     },
-    // 2. Diapositivas dinámicas de los productos escogidos desde /admin
     ...featuredProducts.map((fp) => ({
       id: `prod-${fp.id}`,
-      type: 'product',
+      type: 'product' as const,
       product: fp,
       badge: '⭐ PRODUCTO DESTACADO',
       title: fp.title,
@@ -122,7 +134,6 @@ export default function Home() {
       image: (fp.images && fp.images[0]) || fp.image_url || '/logo.png',
       gradient: 'from-[#120a2e] via-[#1f114d] to-[#0c0f2b]'
     })),
-    // 3. Publicidad para seguir en Instagram
     {
       id: 'promo-instagram',
       type: 'social',
@@ -133,7 +144,6 @@ export default function Home() {
       link: instagramUrl,
       gradient: 'from-[#3a0b22] via-[#24135e] to-[#0c0f2b]'
     },
-    // 4. Publicidad para seguir en Facebook
     {
       id: 'promo-facebook',
       type: 'social',
@@ -146,7 +156,6 @@ export default function Home() {
     }
   ];
 
-  // Auto-rotación del carrusel cada 6 segundos
   useEffect(() => {
     if (bannerSlides.length <= 1) return;
     const timer = setInterval(() => {
@@ -422,7 +431,6 @@ export default function Home() {
           
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-8">
             
-            {/* BANNER ROTATIVO (CON bener001.png, PRODUCTOS DESTACADOS Y PUBLICIDAD INSTAGRAM/FACEBOOK) */}
             <div className="lg:col-span-3 rounded-[32px] overflow-hidden border border-purple-500/40 shadow-[0_0_35px_rgba(147,51,234,0.35)] relative bg-[#0e0c24] h-[260px] sm:h-[300px] flex items-center group">
               <div 
                 className="w-full h-full transition-transform duration-700 ease-in-out flex flex-col"
@@ -431,7 +439,6 @@ export default function Home() {
                 {bannerSlides.map((slide) => (
                   <div key={slide.id} className="w-full h-full shrink-0 relative flex items-center justify-center">
                     
-                    {/* Caso A: Imagen de fondo bener001.png */}
                     {slide.type === 'image' && (
                       <Image
                         src={slide.src || '/bener001.png'}
@@ -442,9 +449,8 @@ export default function Home() {
                       />
                     )}
 
-                    {/* Caso B: Producto Destacado desde el Panel de Administración */}
                     {slide.type === 'product' && slide.product && (
-                      <div className={`w-full h-full bg-gradient-to-r ${slide.gradient} p-6 sm:p-10 flex items-center justify-between rounded-[32px] border border-purple-500/20 relative overflow-hidden`}>
+                      <div className={`w-full h-full bg-gradient-to-r ${slide.gradient || 'from-[#120a2e] via-[#1f114d] to-[#0c0f2b]'} p-6 sm:p-10 flex items-center justify-between rounded-[32px] border border-purple-500/20 relative overflow-hidden`}>
                         <div className="flex-1 pr-4 z-10">
                           <span className="inline-block bg-amber-500/25 border border-amber-400/40 text-amber-200 text-[10px] sm:text-[11px] font-bold px-3 py-1 rounded-full mb-2 tracking-wide">
                             {slide.badge}
@@ -453,15 +459,17 @@ export default function Home() {
                             {slide.title}
                           </h2>
                           <div className="text-xl sm:text-2xl font-black text-emerald-400 mb-2">
-                            ${Number(slide.price).toLocaleString('es-CO')} COP
+                            ${Number(slide.price || 0).toLocaleString('es-CO')} COP
                           </div>
                           <p className="text-slate-300 text-xs sm:text-sm max-w-md mb-4 line-clamp-2">
                             {slide.description}
                           </p>
                           <button
                             onClick={() => {
-                              setSelectedProduct(slide.product);
-                              setActiveImageIndex(0);
+                              if (slide.product) {
+                                setSelectedProduct(slide.product);
+                                setActiveImageIndex(0);
+                              }
                             }}
                             className="inline-block bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-400 hover:to-purple-500 text-white font-semibold text-xs sm:text-sm px-6 py-2.5 rounded-full transition shadow-lg shadow-purple-900/50 active:scale-95 cursor-pointer"
                           >
@@ -470,17 +478,16 @@ export default function Home() {
                         </div>
                         <div className="w-32 h-32 sm:w-48 sm:h-48 rounded-2xl overflow-hidden border border-purple-500/30 bg-[#0d122b] shadow-xl shrink-0 hidden sm:block">
                           <img
-                            src={slide.image}
-                            alt={slide.title}
+                            src={slide.image || '/logo.png'}
+                            alt={slide.title || 'Producto'}
                             className="w-full h-full object-cover"
                           />
                         </div>
                       </div>
                     )}
 
-                    {/* Caso C: Publicidad Social (Instagram / Facebook) */}
                     {slide.type === 'social' && (
-                      <div className={`w-full h-full bg-gradient-to-r ${slide.gradient} p-8 sm:p-12 flex flex-col justify-center rounded-[32px] border border-purple-500/20 relative overflow-hidden`}>
+                      <div className={`w-full h-full bg-gradient-to-r ${slide.gradient || 'from-[#0b1c3a] to-[#200d3d]'} p-8 sm:p-12 flex flex-col justify-center rounded-[32px] border border-purple-500/20 relative overflow-hidden`}>
                         <div className="absolute right-8 top-8 text-6xl opacity-20 pointer-events-none">✨</div>
                         <span className="inline-block bg-purple-500/25 border border-purple-400/40 text-purple-200 text-[11px] font-bold px-3 py-1 rounded-full w-max mb-3 tracking-wide">
                           {slide.badge}
@@ -493,7 +500,7 @@ export default function Home() {
                         </p>
                         <div>
                           <a
-                            href={slide.link}
+                            href={slide.link || '#'}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="inline-block bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500 text-white font-semibold text-xs sm:text-sm px-6 py-2.5 rounded-full transition shadow-lg shadow-purple-900/50 active:scale-95"
@@ -541,7 +548,7 @@ export default function Home() {
               </div>
             </div>
 
-            {/* TARJETA DE CANALES OFICIALES (SIN WHATSAPP, SOLO INSTAGRAM Y FACEBOOK) */}
+            {/* TARJETA DE CANALES OFICIALES */}
             <div className="flex flex-col gap-3 justify-between">
               <div className="bg-[#0d122b]/90 backdrop-blur-md border border-purple-500/30 rounded-2xl p-4 shadow-xl">
                 <span className="text-[11px] font-bold text-purple-300 uppercase tracking-wider block mb-3 text-center">
@@ -812,7 +819,7 @@ export default function Home() {
                         {selectedProduct.category || 'Tecnología'}
                       </span>
                       {selectedProduct.stock <= 2 && selectedProduct.stock > 0 && (
-                        <span className="bg-amber-500/20 text-amber-300 text-xs px-2.5 py-0.5 rounded-full border border-amber-500/30">
+                        <span className="bg-amber-500/20 text-amber-300 text-xs px-2 py-0.5 rounded-full border border-amber-500/30">
                           Quedan {selectedProduct.stock} uds
                         </span>
                       )}
