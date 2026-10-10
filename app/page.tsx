@@ -23,7 +23,12 @@ export default function Home() {
   const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
   const [favorites, setFavorites] = useState<string[]>([]);
 
-  const whatsappUrl = "https://wa.me/573057785317?text=Hola%20Omniverse%20Store,%20quiero%20m%C3%A1s%20informaci%C3%B3n%20sobre%20sus%20productos";
+  // Mensaje llamativo y persuasivo para WhatsApp
+  const whatsappMessage = encodeURIComponent(
+    "¡Hola Omniverse Store! 🚀 Vi su catálogo en la web y me gustaría recibir asesoría para hacer una compra. ¿Qué promociones y métodos de pago tienen disponibles hoy? ✨"
+  );
+  const whatsappUrl = `https://wa.me/573057785317?text=${whatsappMessage}`;
+  const instagramUrl = "https://www.instagram.com/omniverse_store01?exln=bHVjODYzbWRwNG0y&utm_source=qr";
 
   useEffect(() => {
     async function fetchProducts() {
@@ -54,8 +59,11 @@ export default function Home() {
     );
   };
 
+  // Categorías con las nuevas adiciones: Motos y Gamer
   const categories = [
     { name: 'Todas', icon: '🗳️' },
+    { name: 'Gamer', icon: '🎮' },
+    { name: 'Motos', icon: '🏍️' },
     { name: 'Tecnología', icon: '🎧' },
     { name: 'Hogar', icon: '🏠' },
     { name: 'Accesorios', icon: '🛍️' },
@@ -177,11 +185,11 @@ export default function Home() {
           {/* Fila Superior: Banner Oficial + Beneficios */}
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-8">
             
-            {/* Banner Oficial Exacto de la Imagen */}
+            {/* Banner Oficial */}
             <div className="lg:col-span-3 rounded-[32px] overflow-hidden border border-purple-500/40 shadow-[0_0_35px_rgba(147,51,234,0.35)] relative flex items-center justify-center bg-[#0e0c24]">
               <Image
                 src="/banner.png"
-                alt="Omniverse Store - Productos garantizados con la mejor relación calidad-precio"
+                alt="Omniverse Store"
                 width={1200}
                 height={400}
                 priority
@@ -189,44 +197,60 @@ export default function Home() {
               />
             </div>
 
-            {/* Insignias de Confianza */}
-            <div className="flex flex-col gap-3 justify-between">
+            {/* Insignias de Confianza & Redes */}
+            <div className="flex flex-col gap-2.5 justify-between">
               
               {/* Envíos */}
-              <div className="bg-[#0d122b]/85 backdrop-blur-md border border-purple-500/25 rounded-2xl p-4 flex items-center gap-3 shadow-lg">
-                <div className="w-10 h-10 rounded-xl bg-blue-500/20 text-blue-400 flex items-center justify-center text-xl">
+              <div className="bg-[#0d122b]/85 backdrop-blur-md border border-purple-500/25 rounded-2xl p-3.5 flex items-center gap-3 shadow-lg">
+                <div className="w-9 h-9 rounded-xl bg-blue-500/20 text-blue-400 flex items-center justify-center text-lg">
                   🛒
                 </div>
                 <div>
-                  <h4 className="text-sm font-bold text-white">Envíos a todo el país</h4>
-                  <p className="text-xs text-slate-400">Rápidos y con seguimiento</p>
+                  <h4 className="text-xs font-bold text-white">Envíos a todo el país</h4>
+                  <p className="text-[11px] text-slate-400">Rápidos y seguros</p>
                 </div>
               </div>
 
               {/* Compra Segura */}
-              <div className="bg-[#0d122b]/85 backdrop-blur-md border border-purple-500/25 rounded-2xl p-4 flex items-center gap-3 shadow-lg">
-                <div className="w-10 h-10 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center text-xl">
+              <div className="bg-[#0d122b]/85 backdrop-blur-md border border-purple-500/25 rounded-2xl p-3.5 flex items-center gap-3 shadow-lg">
+                <div className="w-9 h-9 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center text-lg">
                   🛡️
                 </div>
                 <div>
-                  <h4 className="text-sm font-bold text-white">Compra Segura</h4>
-                  <p className="text-xs text-slate-400">Tus datos y compras protegidas</p>
+                  <h4 className="text-xs font-bold text-white">Compra Protegida</h4>
+                  <p className="text-[11px] text-slate-400">Garantía en cada orden</p>
                 </div>
               </div>
 
-              {/* Atención Directa (WhatsApp Oficial) */}
+              {/* Instagram Oficial */}
+              <a 
+                href={instagramUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="bg-[#0d122b]/85 backdrop-blur-md border border-purple-500/25 rounded-2xl p-3.5 flex items-center gap-3 shadow-lg hover:border-pink-500/60 transition group cursor-pointer"
+              >
+                <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-amber-500 via-rose-500 to-purple-600 text-white flex items-center justify-center text-base group-hover:scale-110 transition-transform">
+                  📷
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-white group-hover:text-pink-300 transition-colors">Síguenos en Instagram</h4>
+                  <p className="text-[11px] text-slate-400">@omniverse_store01</p>
+                </div>
+              </a>
+
+              {/* WhatsApp Oficial */}
               <a 
                 href={whatsappUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="bg-[#0d122b]/85 backdrop-blur-md border border-purple-500/25 rounded-2xl p-4 flex items-center gap-3 shadow-lg hover:border-emerald-500/60 transition group cursor-pointer"
+                className="bg-[#0d122b]/85 backdrop-blur-md border border-purple-500/25 rounded-2xl p-3.5 flex items-center gap-3 shadow-lg hover:border-emerald-500/60 transition group cursor-pointer"
               >
-                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-xl group-hover:scale-110 transition-transform">
+                <div className="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-lg group-hover:scale-110 transition-transform">
                   💬
                 </div>
                 <div>
-                  <h4 className="text-sm font-bold text-white group-hover:text-emerald-300 transition-colors">Atención Directa</h4>
-                  <p className="text-xs text-slate-400">Soporte por WhatsApp</p>
+                  <h4 className="text-xs font-bold text-white group-hover:text-emerald-300 transition-colors">Atención Directa</h4>
+                  <p className="text-[11px] text-slate-400">Escríbenos a WhatsApp</p>
                 </div>
               </a>
 
@@ -279,8 +303,8 @@ export default function Home() {
                 </div>
               ) : filteredProducts.length === 0 ? (
                 <div className="text-center py-20 bg-[#0d122b]/60 backdrop-blur-md rounded-2xl border border-purple-500/20 text-slate-400">
-                  <p className="text-base font-semibold mb-1">No se encontraron productos</p>
-                  <p className="text-xs">Prueba con otra palabra en el buscador o selecciona otra categoría.</p>
+                  <p className="text-base font-semibold mb-1">No hay productos en esta categoría</p>
+                  <p className="text-xs">Pronto añadiremos nuevos artículos o prueba seleccionando otra categoría.</p>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
@@ -388,6 +412,25 @@ export default function Home() {
 
         {/* 5. PIE DE PÁGINA */}
         <footer className="border-t border-purple-900/30 bg-[#060814]/90 py-8 text-center text-xs text-slate-500 mt-12">
+          <div className="flex justify-center items-center gap-4 mb-3">
+            <a 
+              href={instagramUrl} 
+              target="_blank" 
+              rel="noopener noreferrer" 
+              className="hover:text-pink-400 transition"
+            >
+              Instagram: @omniverse_store01
+            </a>
+            <span>•</span>
+            <a 
+              href={whatsappUrl} 
+              target="_blank" 
+              rel="noopener noreferrer" 
+              className="hover:text-emerald-400 transition"
+            >
+              WhatsApp: +57 305 778 5317
+            </a>
+          </div>
           <p className="mb-2">© 2026 Omniverse Store. Todos los derechos reservados.</p>
           <p className="text-slate-600">Desarrollado con Next.js, Supabase y Vercel</p>
         </footer>
