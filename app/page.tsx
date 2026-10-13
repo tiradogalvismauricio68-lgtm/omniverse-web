@@ -1,33 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import Link from 'next/link';
-import { supabase } from '../lib/supabase';
-
-interface OrderItem {
-  id: string;
-  title: string;
-  price: number;
-  quantity: number;
-}
-
-interface Order {
-  id: string;
-  created_at: string;
-  customer_name: string;
-  customer_phone: string;
-  customer_city: string;
-  delivery_type: string;
-  customer_address?: string;
-  customer_neighborhood?: string;
-  payment_method: string;
-  notes?: string;
-  items: OrderItem[];
-  subtotal?: number;
-  delivery_cost?: number;
-  total: number;
-  status: 'pendiente' | 'completado' | 'cancelado';
-}
+import Image from 'next/image';
+import { supabase } from './lib/supabase';
 
 interface Product {
   id: string;
@@ -38,1411 +13,1432 @@ interface Product {
   stock: number;
   image_url: string;
   images?: string[];
-  active: boolean;
-  featured?: boolean;
   category?: string;
+  active?: boolean;
+  featured?: boolean;
 }
 
-interface Profile {
+interface CartItem extends Product {
+  quantity: number;
+}
+
+interface BannerSlide {
   id: string;
-  created_at: string;
-  full_name: string;
-  email: string;
-  phone?: string;
-  accepted_terms: boolean;
+  type: 'image' | 'product' | 'social';
+  src?: string;
+  alt?: string;
+  product?: Product;
+  badge?: string;
+  title?: string;
+  price?: number;
+  description?: string;
+  image?: string;
+  btnText?: string;
+  link?: string;
+  platform?: 'instagram' | 'facebook';
+  gradient?: string;
 }
 
-type DateFilter = 'all' | 'today' | 'week' | 'month';
-
-export default function AdminDashboard() {
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
-  const [authChecking, setAuthChecking] = useState<boolean>(true);
-  const [loginEmail, setLoginEmail] = useState('');
-  const [loginPassword, setLoginPassword] = useState('');
-  const [loginError, setLoginError] = useState<string | null>(null);
-  const [isLoggingIn, setIsLoggingIn] = useState<boolean>(false);
-
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'orders' | 'inventory' | 'customers'>('dashboard');
-  const [dateFilter, setDateFilter] = useState<DateFilter>('month');
-
-  const [orders, setOrders] = useState<Order[]>([]);
+export default function Home() {
   const [products, setProducts] = useState<Product[]>([]);
-  const [profiles, setProfiles] = useState<Profile[]>([]);
-  const [loading, setLoading] = useState<boolean>(false);
-  const [updatingId, setUpdatingId] = useState<string | null>(null);
-  const [copiedEmails, setCopiedEmails] = useState<boolean>(false);
+  const [cart, setCart] = useState<CartItem[]>([]);
+  const [isCartOpen, setIsCartOpen] = useState<boolean>(false);
+  const [isCheckoutOpen, setIsCheckoutOpen] = useState<boolean>(false);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [activeImageIndex, setActiveImageIndex] = useState<number>(0);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [searchTerm, setSearchTerm] = useState<string>('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('Todas');
+  const [favorites, setFavorites] = useState<string[]>([]);
+  
+  // Mi Cuenta
+  const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
+  const [authTab, setAuthTab] = useState<'login' | 'register'>('login');
+  const [showTermsModal, setShowTermsModal] = useState<boolean>(false);
+  const [regName, setRegName] = useState('');
+  const [regEmail, setRegEmail] = useState('');
+  const [regPhone, setRegPhone] = useState('');
+  const [regAcceptedTerms, setRegAcceptedTerms] = useState(false);
+  const [authMsg, setAuthMsg] = useState<{ type: 'ok' | 'error'; text: string } | null>(null);
 
-  // Estados: Crear Producto
-  const [showAddModal, setShowAddModal] = useState<boolean>(false);
-  const [createTitle, setCreateTitle] = useState('');
-  const [createCategory, setCreateCategory] = useState('Tecnología');
-  const [createPrice, setCreatePrice] = useState<number | ''>('');
-  const [createStock, setCreateStock] = useState<number | ''>(5);
-  const [createDescription, setCreateDescription] = useState('');
-  const [createFullDescription, setCreateFullDescription] = useState('');
-  const [createFeatured, setCreateFeatured] = useState<boolean>(false);
-  const [createFiles, setCreateFiles] = useState<File[]>([]);
-  const [isCreating, setIsCreating] = useState<boolean>(false);
-  const [createError, setCreateError] = useState<string | null>(null);
+  // Carrusel
+  const [currentSlide, setCurrentSlide] = useState<number>(0);
+  const [showWhatsappBubble, setShowWhatsappBubble] = useState<boolean>(true);
 
-  // Estados: Editar Producto
-  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
-  const [editTitle, setEditTitle] = useState('');
-  const [editCategory, setEditCategory] = useState('Tecnología');
-  const [editPrice, setEditPrice] = useState<number | ''>('');
-  const [editStock, setEditStock] = useState<number | ''>(0);
-  const [editDescription, setEditDescription] = useState('');
-  const [editFullDescription, setEditFullDescription] = useState('');
-  const [editFeatured, setEditFeatured] = useState<boolean>(false);
-  const [editImages, setEditImages] = useState<string[]>([]);
-  const [editNewFiles, setEditNewFiles] = useState<File[]>([]);
-  const [isUpdating, setIsUpdating] = useState<boolean>(false);
-  const [editError, setEditError] = useState<string | null>(null);
+  // Checkout
+  const [customerName, setCustomerName] = useState('');
+  const [customerPhone, setCustomerPhone] = useState('');
+  const [customerCity, setCustomerCity] = useState('');
+  const [deliveryType, setDeliveryType] = useState<'domicilio' | 'recogida'>('domicilio');
+  const [customerAddress, setCustomerAddress] = useState('');
+  const [customerNeighborhood, setCustomerNeighborhood] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<'transferencia' | 'efectivo'>('transferencia');
+  const [notes, setNotes] = useState('');
+  const [isSubmittingOrder, setIsSubmittingOrder] = useState<boolean>(false);
+
+  const SHIPPING_COST = 15000;
+
+  const defaultWhatsappMessage = encodeURIComponent(
+    "Hola Omniverse Store, vi su catálogo web y me gustaría recibir asesoría para hacer un pedido. ¿Qué promociones tienen disponibles?"
+  );
+  const whatsappUrl = `https://api.whatsapp.com/send?phone=573057785317&text=${defaultWhatsappMessage}`;
+  const instagramUrl = "https://www.instagram.com/omniverse_store01?exln=bHVjODYzbWRwNG0y&utm_source=qr";
+  const facebookUrl = "https://facebook.com";
 
   useEffect(() => {
-    async function checkSession() {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session && session.user?.email === 'tiradogalvismauricio68@gmail.com') {
-        setIsAuthenticated(true);
-      } else {
-        setIsAuthenticated(false);
+    async function fetchProducts() {
+      try {
+        const { data, error } = await supabase.from('products').select('*');
+        if (error) console.error('Error cargando productos:', error.message);
+
+        if (data && data.length > 0) {
+          const enriched = data.map((item: any) => {
+            const isAudifonos = item.title?.toLowerCase().includes('audífonos') || item.title?.toLowerCase().includes('audifonos');
+            return {
+              ...item,
+              images: item.images && item.images.length > 0
+                ? item.images
+                : isAudifonos
+                ? ['/audifonosgamer1.png', '/audifonosgamer2.png', '/audifonosgamer3.png']
+                : [item.image_url || '/logo.png'],
+              full_description: item.full_description || item.description,
+            };
+          });
+          setProducts(enriched);
+        } else {
+          setProducts([]);
+        }
+      } catch (err) {
+        console.error('Error:', err);
+      } finally {
+        setLoading(false);
       }
-      setAuthChecking(false);
     }
-    checkSession();
+    fetchProducts();
   }, []);
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoggingIn(true);
-    setLoginError(null);
+  const featuredProducts = products.filter((p) => Boolean(p.featured) && p.active !== false);
 
-    if (loginEmail.trim().toLowerCase() !== 'tiradogalvismauricio68@gmail.com') {
-      setLoginError('Credenciales o permisos no válidos.');
-      setIsLoggingIn(false);
-      return;
+  const bannerSlides: BannerSlide[] = [
+    {
+      id: 'main-banner',
+      type: 'image',
+      src: '/baner002.png',
+      alt: 'Omniverse Store Oficial'
+    },
+    ...featuredProducts.map((fp) => ({
+      id: `prod-${fp.id}`,
+      type: 'product' as const,
+      product: fp,
+      badge: '⭐ PRODUCTO DESTACADO',
+      title: fp.title,
+      price: fp.price,
+      description: fp.description,
+      image: (fp.images && fp.images[0]) || fp.image_url || '/logo.png',
+      gradient: 'from-[#120a2e] via-[#1f114d] to-[#0c0f2b]'
+    })),
+    {
+      id: 'promo-instagram',
+      type: 'social',
+      platform: 'instagram',
+      badge: '📸 COMUNIDAD OFICIAL',
+      title: '¡Síguenos en Instagram!',
+      description: 'Conoce nuevos lanzamientos, contenido exclusivo y ofertas relámpago en @omniverse_store01.',
+      btnText: 'Seguir en Instagram',
+      link: instagramUrl,
+      gradient: 'from-[#2e0827] via-[#240b45] to-[#090b21]'
+    },
+    {
+      id: 'promo-facebook',
+      type: 'social',
+      platform: 'facebook',
+      badge: '👍 COMUNIDAD OFICIAL',
+      title: 'Únete a nuestra página de Facebook',
+      description: 'Entérate de promociones de temporada, reseñas y nuevos ingresos en tecnología y accesorios.',
+      btnText: 'Seguir en Facebook',
+      link: facebookUrl,
+      gradient: 'from-[#0a1838] via-[#111f4d] to-[#090b21]'
     }
-
-    try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: loginEmail.trim().toLowerCase(),
-        password: loginPassword,
-      });
-
-      if (error) {
-        setLoginError('Acceso denegado: ' + error.message);
-      } else if (data.session) {
-        setIsAuthenticated(true);
-      }
-    } catch (err: any) {
-      setLoginError(err?.message || 'Error al iniciar sesión');
-    } finally {
-      setIsLoggingIn(false);
-    }
-  };
-
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    setIsAuthenticated(false);
-  };
-
-  const fetchData = async () => {
-    setLoading(true);
-    try {
-      const [ordersRes, productsRes, profilesRes] = await Promise.all([
-        supabase.from('orders').select('*').order('created_at', { ascending: false }),
-        supabase.from('products').select('*').order('title', { ascending: true }),
-        supabase.from('profiles').select('*').order('created_at', { ascending: false }),
-      ]);
-
-      if (ordersRes.data) setOrders(ordersRes.data as Order[]);
-      if (productsRes.data) setProducts(productsRes.data as Product[]);
-      if (profilesRes.data) setProfiles(profilesRes.data as Profile[]);
-    } catch (err) {
-      console.error('Error cargando datos del panel admin:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  ];
 
   useEffect(() => {
-    if (isAuthenticated) {
-      fetchData();
-    }
-  }, [isAuthenticated]);
+    if (bannerSlides.length <= 1) return;
+    const timer = setInterval(() => {
+      setCurrentSlide((prev) => (prev + 1) % bannerSlides.length);
+    }, 6000);
+    return () => clearInterval(timer);
+  }, [bannerSlides.length]);
 
-  // APROBAR PEDIDO Y DESCONTAR STOCK AUTOMÁTICAMENTE
-  const handleApproveOrderAndDeductStock = async (order: Order) => {
-    setUpdatingId(order.id);
-    try {
-      // 1. Descontar unidades de cada producto en la base de datos
-      if (Array.isArray(order.items)) {
-        for (const item of order.items) {
-          const currentProd = products.find((p) => p.id === item.id);
-          if (currentProd) {
-            const updatedStock = Math.max(0, Number(currentProd.stock) - Number(item.quantity));
-            await supabase
-              .from('products')
-              .update({ stock: updatedStock })
-              .eq('id', item.id);
+  const addToCart = (product: Product) => {
+    if (product.stock <= 0) return;
+    setCart((prev) => {
+      const existing = prev.find((item) => item.id === product.id);
+      if (existing) {
+        if (existing.quantity >= product.stock) return prev;
+        return prev.map((item) =>
+          item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
+        );
+      }
+      return [...prev, { ...product, quantity: 1 }];
+    });
+    setIsCartOpen(true);
+  };
+
+  const updateQuantity = (id: string, delta: number) => {
+    setCart((prev) =>
+      prev
+        .map((item) => {
+          if (item.id === id) {
+            const newQty = item.quantity + delta;
+            if (newQty > item.stock) return item;
+            return newQty > 0 ? { ...item, quantity: newQty } : null;
           }
-        }
-      }
-
-      // 2. Marcar pedido como completado
-      const { error } = await supabase
-        .from('orders')
-        .update({ status: 'completado' })
-        .eq('id', order.id);
-
-      if (error) {
-        alert('Error al aprobar: ' + error.message);
-      } else {
-        alert('✓ Pedido aprobado exitosamente. Stock actualizado en el inventario.');
-        await fetchData();
-      }
-    } catch (err: any) {
-      alert('Error: ' + err?.message);
-    } finally {
-      setUpdatingId(null);
-    }
-  };
-
-  const handleCancelOrder = async (orderId: string) => {
-    if (!window.confirm('¿Seguro que deseas cancelar este pedido?')) return;
-    setUpdatingId(orderId);
-    try {
-      const { error } = await supabase
-        .from('orders')
-        .update({ status: 'cancelado' })
-        .eq('id', orderId);
-
-      if (error) alert('Error: ' + error.message);
-      else await fetchData();
-    } catch (err: any) {
-      alert('Error: ' + err?.message);
-    } finally {
-      setUpdatingId(null);
-    }
-  };
-
-  const handleToggleProductActive = async (productId: string, currentActive: boolean) => {
-    try {
-      const { error } = await supabase.from('products').update({ active: !currentActive }).eq('id', productId);
-      if (error) alert('Error: ' + error.message);
-      else {
-        setProducts((prev) => prev.map((p) => (p.id === productId ? { ...p, active: !currentActive } : p)));
-      }
-    } catch (err: any) {
-      alert('Error: ' + err?.message);
-    }
-  };
-
-  const handleToggleProductFeatured = async (productId: string, currentFeatured: boolean) => {
-    try {
-      const { error } = await supabase.from('products').update({ featured: !currentFeatured }).eq('id', productId);
-      if (error) alert('Error al actualizar banner: ' + error.message);
-      else {
-        setProducts((prev) => prev.map((p) => (p.id === productId ? { ...p, featured: !currentFeatured } : p)));
-      }
-    } catch (err: any) {
-      alert('Error: ' + err?.message);
-    }
-  };
-
-  const handleUpdateStock = async (productId: string, newStock: number) => {
-    if (newStock < 0) return;
-    try {
-      const { error } = await supabase.from('products').update({ stock: newStock }).eq('id', productId);
-      if (error) alert('Error: ' + error.message);
-      else {
-        setProducts((prev) => prev.map((p) => (p.id === productId ? { ...p, stock: newStock } : p)));
-      }
-    } catch (err: any) {
-      alert('Error: ' + err?.message);
-    }
-  };
-
-  const handleDeleteProduct = async (productId: string, title: string) => {
-    if (!window.confirm(`¿Estás seguro de eliminar permanentemente "${title}"?`)) return;
-    try {
-      const { error } = await supabase.from('products').delete().eq('id', productId);
-      if (error) alert('Error: ' + error.message);
-      else {
-        setProducts((prev) => prev.filter((p) => p.id !== productId));
-        alert('Producto eliminado exitosamente.');
-      }
-    } catch (err: any) {
-      alert('Error: ' + err?.message);
-    }
-  };
-
-  const uploadFilesToStorage = async (files: File[]): Promise<string[]> => {
-    const urls: string[] = [];
-    for (const file of files) {
-      const cleanName = `${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
-      const { error } = await supabase.storage.from('products').upload(cleanName, file, {
-        cacheControl: '3600',
-        upsert: true,
-      });
-      if (!error) {
-        const { data } = supabase.storage.from('products').getPublicUrl(cleanName);
-        if (data?.publicUrl) urls.push(data.publicUrl);
-      }
-    }
-    return urls;
-  };
-
-  const handleCreateProduct = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!createTitle || createPrice === '' || createStock === '') {
-      setCreateError('Por favor completa título, precio y stock.');
-      return;
-    }
-    setIsCreating(true);
-    setCreateError(null);
-    try {
-      const uploadedUrls = await uploadFilesToStorage(createFiles);
-      const mainImg = uploadedUrls.length > 0 ? uploadedUrls[0] : '/logo.png';
-      const imagesList = uploadedUrls.length > 0 ? uploadedUrls : [mainImg];
-
-      const { data, error } = await supabase.from('products').insert([
-        {
-          title: createTitle,
-          category: createCategory,
-          price: Number(createPrice),
-          stock: Number(createStock),
-          description: createDescription,
-          full_description: createFullDescription || createDescription,
-          image_url: mainImg,
-          images: imagesList,
-          active: true,
-          featured: createFeatured,
-        },
-      ]).select();
-
-      if (error) setCreateError(error.message);
-      else {
-        if (data) setProducts((prev) => [data[0] as Product, ...prev]);
-        setShowAddModal(false);
-        setCreateTitle('');
-        setCreatePrice('');
-        setCreateStock(5);
-        setCreateDescription('');
-        setCreateFullDescription('');
-        setCreateFeatured(false);
-        setCreateFiles([]);
-        alert('¡Producto creado exitosamente!');
-      }
-    } catch (err: any) {
-      setCreateError(err?.message || 'Error al crear');
-    } finally {
-      setIsCreating(false);
-    }
-  };
-
-  const startEditProduct = (prod: Product) => {
-    setEditingProduct(prod);
-    setEditTitle(prod.title);
-    setEditCategory(prod.category || 'Tecnología');
-    setEditPrice(prod.price);
-    setEditStock(prod.stock);
-    setEditDescription(prod.description || '');
-    setEditFullDescription(prod.full_description || prod.description || '');
-    setEditFeatured(Boolean(prod.featured));
-    
-    const existingImgs = prod.images && prod.images.length > 0
-      ? prod.images
-      : (prod.image_url ? [prod.image_url] : []);
-    setEditImages([...existingImgs]);
-    setEditNewFiles([]);
-    setEditError(null);
-  };
-
-  const moveImageLeft = (index: number) => {
-    if (index === 0) return;
-    setEditImages((prev) => {
-      const copy = [...prev];
-      const temp = copy[index - 1];
-      copy[index - 1] = copy[index];
-      copy[index] = temp;
-      return copy;
-    });
-  };
-
-  const moveImageRight = (index: number) => {
-    if (index === editImages.length - 1) return;
-    setEditImages((prev) => {
-      const copy = [...prev];
-      const temp = copy[index + 1];
-      copy[index + 1] = copy[index];
-      copy[index] = temp;
-      return copy;
-    });
-  };
-
-  const removeImageAt = (index: number) => {
-    setEditImages((prev) => prev.filter((_, i) => i !== index));
-  };
-
-  const handleSaveEditProduct = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingProduct) return;
-    if (!editTitle || editPrice === '' || editStock === '') {
-      setEditError('Título, precio y stock son obligatorios.');
-      return;
-    }
-
-    setIsUpdating(true);
-    setEditError(null);
-
-    try {
-      let newlyUploadedUrls: string[] = [];
-      if (editNewFiles.length > 0) {
-        newlyUploadedUrls = await uploadFilesToStorage(editNewFiles);
-      }
-
-      const finalImages = [...editImages, ...newlyUploadedUrls];
-      const finalMainImage = finalImages.length > 0 ? finalImages[0] : '/logo.png';
-
-      const { data, error } = await supabase
-        .from('products')
-        .update({
-          title: editTitle,
-          category: editCategory,
-          price: Number(editPrice),
-          stock: Number(editStock),
-          description: editDescription,
-          full_description: editFullDescription || editDescription,
-          featured: editFeatured,
-          image_url: finalMainImage,
-          images: finalImages.length > 0 ? finalImages : [finalMainImage],
+          return item;
         })
-        .eq('id', editingProduct.id)
-        .select();
+        .filter(Boolean) as CartItem[]
+    );
+  };
+
+  const removeFromCart = (id: string) => {
+    setCart((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  const cartSubtotal = cart.reduce((acc, item) => acc + item.price * item.quantity, 0);
+  const currentDeliveryCost = deliveryType === 'domicilio' ? SHIPPING_COST : 0;
+  const cartGrandTotal = cartSubtotal + currentDeliveryCost;
+  const cartItemCount = cart.reduce((acc, item) => acc + item.quantity, 0);
+
+  const toggleFavorite = (id: string) => {
+    setFavorites((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  const categories = [
+    { name: 'Todas', icon: '🗳️' },
+    { name: 'Tecnología', icon: '🎧' },
+    { name: 'Motos', icon: '🏍️' },
+    { name: 'Hogar', icon: '🏠' },
+    { name: 'Accesorios', icon: '🛍️' },
+    { name: 'Iluminación', icon: '💡' },
+  ];
+
+  const filteredProducts = products.filter((product) => {
+    const matchesSearch =
+      product.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      product.description.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesCategory =
+      selectedCategory === 'Todas' ||
+      (product.category && product.category.toLowerCase() === selectedCategory.toLowerCase());
+    const isActive = product.active !== false;
+    return matchesSearch && matchesCategory && isActive;
+  });
+
+  const handleCheckoutSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (cart.length === 0 || isSubmittingOrder) return;
+
+    setIsSubmittingOrder(true);
+    const itemsPayload = cart.map((c) => ({
+      id: c.id,
+      title: c.title,
+      price: c.price,
+      quantity: c.quantity,
+    }));
+
+    try {
+      const { error } = await supabase.from('orders').insert([
+        {
+          customer_name: customerName,
+          customer_phone: customerPhone,
+          customer_city: customerCity,
+          delivery_type: deliveryType,
+          customer_address: deliveryType === 'domicilio' ? customerAddress : '',
+          customer_neighborhood: deliveryType === 'domicilio' ? customerNeighborhood : '',
+          payment_method: paymentMethod,
+          notes: notes,
+          items: itemsPayload,
+          subtotal: cartSubtotal,
+          delivery_cost: currentDeliveryCost,
+          total: cartGrandTotal,
+          status: 'pendiente',
+        },
+      ]);
 
       if (error) {
-        setEditError('Error al actualizar: ' + error.message);
-      } else {
-        if (data && data.length > 0) {
-          setProducts((prev) =>
-            prev.map((p) => (p.id === editingProduct.id ? (data[0] as Product) : p))
-          );
-        }
-        setEditingProduct(null);
-        alert('¡Producto guardado exitosamente!');
+        console.error('Error guardando pedido en Supabase:', error.message);
       }
-    } catch (err: any) {
-      setEditError(err?.message || 'Error guardando cambios');
-    } finally {
-      setIsUpdating(false);
+    } catch (err) {
+      console.error('Error de conexión:', err);
+    }
+
+    const itemsText = cart
+      .map(
+        (item, index) =>
+          `${index + 1}. *${item.title}* x${item.quantity} - $${(item.price * item.quantity).toLocaleString('es-CO')}`
+      )
+      .join('\n');
+
+    let msg = `*NUEVO PEDIDO - OMNIVERSE STORE*\n\n`;
+    msg += `*Cliente:* ${customerName}\n`;
+    msg += `*Teléfono:* ${customerPhone}\n`;
+    msg += `*Ciudad:* ${customerCity}\n`;
+    msg += `*Tipo de Entrega:* ${deliveryType === 'domicilio' ? 'Envío a Domicilio' : 'Pasa a Recoger'}\n`;
+
+    if (deliveryType === 'domicilio') {
+      msg += `*Dirección:* ${customerAddress}\n`;
+      if (customerNeighborhood) msg += `*Barrio:* ${customerNeighborhood}\n`;
+      msg += `*Costo de Envío:* $${SHIPPING_COST.toLocaleString('es-CO')} COP\n`;
+    }
+
+    msg += `*Método de Pago:* ${paymentMethod === 'transferencia' ? 'Transferencia (Nequi / Bancolombia)' : 'Efectivo contra entrega'}\n`;
+    if (notes) msg += `*Notas:* ${notes}\n`;
+
+    msg += `\n*PRODUCTOS:*\n${itemsText}\n\n`;
+    msg += `*Subtotal:* $${cartSubtotal.toLocaleString('es-CO')} COP\n`;
+    if (deliveryType === 'domicilio') {
+      msg += `*Envío:* $${SHIPPING_COST.toLocaleString('es-CO')} COP\n`;
+    }
+    msg += `*TOTAL A PAGAR:* $${cartGrandTotal.toLocaleString('es-CO')} COP\n\n`;
+    msg += `Hola, acabo de enviar mi pedido por la web. ¿Me pueden confirmar para gestionar el despacho?`;
+
+    const finalUrl = `https://api.whatsapp.com/send?phone=573057785317&text=${encodeURIComponent(msg)}`;
+    window.open(finalUrl, '_blank');
+
+    setIsSubmittingOrder(false);
+    setIsCheckoutOpen(false);
+    setIsCartOpen(false);
+  };
+
+  const handleRegisterSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!regAcceptedTerms) {
+      setAuthMsg({ type: 'error', text: 'Debes aceptar los Términos y la Política de Tratamiento de Datos Personales.' });
+      return;
+    }
+
+    try {
+      const { error } = await supabase.from('profiles').insert([
+        {
+          full_name: regName,
+          email: regEmail.trim().toLowerCase(),
+          phone: regPhone,
+          accepted_terms: true,
+          accepted_data_policy: true,
+          accepted_marketing: true,
+        },
+      ]);
+
+      if (error) {
+        setAuthMsg({ type: 'error', text: `Error: ${error.message}` });
+      } else {
+        setAuthMsg({ type: 'ok', text: '¡Registro exitoso! Ya haces parte de la comunidad Omniverse Store.' });
+        setTimeout(() => {
+          setShowAuthModal(false);
+          setAuthMsg(null);
+          setRegName('');
+          setRegEmail('');
+          setRegPhone('');
+          setRegAcceptedTerms(false);
+        }, 2000);
+      }
+    } catch {
+      setAuthMsg({ type: 'error', text: 'Hubo un error al procesar el registro.' });
     }
   };
 
-  const handleCopyEmails = () => {
-    const emailList = profiles.map((p) => p.email).filter(Boolean).join(', ');
-    navigator.clipboard.writeText(emailList);
-    setCopiedEmails(true);
-    setTimeout(() => setCopiedEmails(false), 2500);
-  };
+  return (
+    <div className="relative min-h-screen text-slate-100 flex flex-col font-sans selection:bg-purple-600 selection:text-white bg-[#060814]">
+      
+      {/* FONDO CÓSMICO */}
+      <div 
+        className="fixed inset-0 pointer-events-none z-0 bg-cover bg-center opacity-65"
+        style={{ backgroundImage: "url('/fondo.png')" }}
+      />
+      <div className="fixed inset-0 pointer-events-none z-0 bg-gradient-to-b from-[#060814]/85 via-transparent to-[#060814]/95" />
 
-  // FILTRADO POR FECHA PARA MÉTRICAS (HOY, SEMANA, MES, TOTAL)
-  const isOrderInDateRange = (orderDateStr: string, filter: DateFilter) => {
-    if (filter === 'all') return true;
-    const orderDate = new Date(orderDateStr);
-    const now = new Date();
+      <div className="relative z-10 flex flex-col min-h-screen">
 
-    if (filter === 'today') {
-      return (
-        orderDate.getFullYear() === now.getFullYear() &&
-        orderDate.getMonth() === now.getMonth() &&
-        orderDate.getDate() === now.getDate()
-      );
-    }
+        {/* 1. BARRA SUPERIOR TOTALMENTE ADAPTADA */}
+        <header className="sticky top-0 z-40 bg-[#070a1a]/90 backdrop-blur-md border-b border-purple-500/20 px-3 py-2.5 sm:px-6 md:px-8">
+          <div className="max-w-7xl mx-auto flex items-center justify-between gap-2 sm:gap-4">
+            
+            <div 
+              className="flex items-center cursor-pointer transition-transform hover:scale-105 shrink-0" 
+              onClick={() => { setSelectedCategory('Todas'); setSearchTerm(''); }}
+            >
+              <Image
+                src="/logo.png"
+                alt="Omniverse Store Logo"
+                width={170}
+                height={42}
+                priority
+                className="h-7 sm:h-9 md:h-10 w-auto object-contain"
+              />
+            </div>
 
-    if (filter === 'week') {
-      const oneWeekAgo = new Date();
-      oneWeekAgo.setDate(now.getDate() - 7);
-      return orderDate >= oneWeekAgo;
-    }
+            <div className="flex-1 max-w-xl mx-2 hidden md:block">
+              <div className="relative">
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Buscar productos, marcas o categorías..."
+                  className="w-full bg-[#0d122b]/80 border border-purple-500/30 rounded-full py-2 pl-5 pr-12 text-sm text-gray-200 placeholder-gray-400 focus:outline-none focus:border-purple-400 focus:ring-1 focus:ring-purple-400 transition-all shadow-inner backdrop-blur-sm"
+                />
+                <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-purple-400">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                </span>
+              </div>
+            </div>
 
-    if (filter === 'month') {
-      return (
-        orderDate.getFullYear() === now.getFullYear() &&
-        orderDate.getMonth() === now.getMonth()
-      );
-    }
+            <div className="flex items-center gap-1.5 sm:gap-3">
+              <button
+                onClick={() => { setShowAuthModal(true); setAuthTab('login'); setAuthMsg(null); }}
+                className="flex items-center gap-1 text-xs md:text-sm text-gray-300 hover:text-white px-2 sm:px-3 py-1.5 rounded-xl hover:bg-white/5 transition-colors cursor-pointer"
+                title="Mi Cuenta"
+              >
+                <svg className="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+                <span className="hidden sm:inline font-medium">Cuenta</span>
+              </button>
 
-    return true;
-  };
+              <button 
+                onClick={() => {
+                  if (favorites.length > 0) {
+                    alert(`Tienes ${favorites.length} producto(s) en favoritos.`);
+                  } else {
+                    alert('Pulsa el corazón ❤️ en cualquier producto para guardarlo en favoritos.');
+                  }
+                }}
+                className="relative flex items-center gap-1 text-xs md:text-sm text-gray-300 hover:text-white px-2 sm:px-3 py-1.5 rounded-xl hover:bg-white/5 transition-colors cursor-pointer"
+                title="Favoritos"
+              >
+                <svg className="w-4 h-4 text-pink-400" fill={favorites.length > 0 ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                </svg>
+                <span className="hidden sm:inline font-medium">Favoritos</span>
+                {favorites.length > 0 && (
+                  <span className="bg-pink-600 text-white text-[10px] font-bold rounded-full h-4 w-4 flex items-center justify-center">
+                    {favorites.length}
+                  </span>
+                )}
+              </button>
 
-  const filteredOrders = orders.filter((o) => isOrderInDateRange(o.created_at, dateFilter));
-  const completedOrders = filteredOrders.filter((o) => o.status === 'completado');
-  const pendingOrders = filteredOrders.filter((o) => o.status === 'pendiente');
-  const totalRevenue = completedOrders.reduce((acc, o) => acc + Number(o.total || 0), 0);
-  const totalUnitsSold = completedOrders.reduce((acc, o) => {
-    if (!Array.isArray(o.items)) return acc;
-    return acc + o.items.reduce((sum, item) => sum + (item.quantity || 0), 0);
-  }, 0);
-  const lowStockProducts = products.filter((p) => Number(p.stock) <= 2);
+              <button 
+                onClick={() => setIsCartOpen(true)}
+                className="relative flex items-center gap-1.5 sm:gap-2 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white text-xs sm:text-sm font-semibold px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl transition-all shadow-lg shadow-purple-900/40 active:scale-95 cursor-pointer"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
+                </svg>
+                <span className="hidden sm:inline">Carrito</span>
+                <span className="bg-white text-purple-900 font-bold text-xs px-1.5 py-0.2 rounded-full shadow-sm">
+                  {cartItemCount}
+                </span>
+              </button>
+            </div>
 
-  if (authChecking) {
-    return (
-      <div className="min-h-screen bg-[#060814] flex items-center justify-center text-slate-400">
-        <div className="w-8 h-8 border-4 border-purple-500 border-t-transparent rounded-full animate-spin"></div>
-      </div>
-    );
-  }
-
-  if (!isAuthenticated) {
-    return (
-      <div className="min-h-screen bg-[#060814] flex items-center justify-center p-4">
-        <div className="bg-[#0d122b] border border-purple-500/40 rounded-3xl max-w-md w-full p-8 shadow-2xl relative">
-          <div className="text-center mb-6">
-            <span className="text-3xl block mb-2">🔐</span>
-            <h2 className="text-xl font-bold text-white">Acceso Administrativo</h2>
-            <p className="text-xs text-slate-400 mt-1">Omniverse Store • Exclusivo para el propietario</p>
           </div>
 
-          {loginError && (
-            <div className="bg-red-500/20 border border-red-500/40 text-red-300 text-xs p-3 rounded-xl mb-4 font-semibold">
-              {loginError}
+          <div className="mt-2.5 md:hidden">
+            <div className="relative">
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Buscar en el catálogo..."
+                className="w-full bg-[#0d122b]/95 border border-purple-500/30 rounded-xl py-2 pl-4 pr-10 text-xs text-gray-200 placeholder-gray-400 focus:outline-none focus:border-purple-400 shadow-inner"
+              />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-purple-400">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+              </span>
+            </div>
+          </div>
+        </header>
+
+        {/* 2. BANNER Y CANALES */}
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 w-full flex-1">
+          
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 sm:gap-6 mb-6 sm:mb-8">
+            
+            {/* CARRUSEL DE BANNERS */}
+            <div className="lg:col-span-3 rounded-[24px] sm:rounded-[32px] overflow-hidden border border-purple-500/40 shadow-[0_0_30px_rgba(147,51,234,0.3)] relative bg-[#0a0d24] h-[190px] sm:h-[260px] md:h-[300px] flex items-center group">
+              <div 
+                className="w-full h-full transition-transform duration-700 ease-in-out flex flex-col"
+                style={{ transform: `translateY(-${currentSlide * 100}%)` }}
+              >
+                {bannerSlides.map((slide) => (
+                  <div key={slide.id} className="w-full h-full shrink-0 relative flex items-center justify-center">
+                    
+                    {/* BANNER 1: LOGO CENTRADO Y ESCALADO */}
+                    {slide.type === 'image' && (
+                      <div className="w-full h-full relative overflow-hidden bg-[#070a1a] flex items-center justify-center p-2 sm:p-4">
+                        <img
+                          src={slide.src || '/baner002.png'}
+                          alt={slide.alt || 'Banner Omniverse Store'}
+                          className="w-full h-full max-h-full object-contain object-center"
+                          onError={(e) => {
+                            const target = e.target as HTMLImageElement;
+                            if (!target.src.includes('baner002.png')) {
+                              target.src = '/baner002.png';
+                            }
+                          }}
+                        />
+                      </div>
+                    )}
+
+                    {/* PRODUCTO DESTACADO */}
+                    {slide.type === 'product' && slide.product && (
+                      <div className={`w-full h-full bg-gradient-to-r ${slide.gradient || 'from-[#120a2e] via-[#1f114d] to-[#0c0f2b]'} p-4 sm:p-8 md:p-10 flex items-center justify-between rounded-[24px] sm:rounded-[32px] border border-purple-500/20 relative overflow-hidden`}>
+                        <div className="flex-1 pr-2 sm:pr-4 z-10">
+                          <span className="inline-block bg-amber-500/25 border border-amber-400/40 text-amber-200 text-[9px] sm:text-[11px] font-bold px-2.5 py-0.5 sm:py-1 rounded-full mb-1 sm:mb-2 tracking-wide">
+                            {slide.badge}
+                          </span>
+                          <h2 className="text-sm sm:text-2xl md:text-3xl font-black text-white mb-0.5 line-clamp-1">
+                            {slide.title}
+                          </h2>
+                          <div className="text-sm sm:text-2xl font-black text-emerald-400 mb-1 sm:mb-2">
+                            ${Number(slide.price || 0).toLocaleString('es-CO')} COP
+                          </div>
+                          <p className="text-slate-300 text-[10px] sm:text-xs md:text-sm max-w-md mb-2.5 sm:mb-4 line-clamp-2 leading-tight">
+                            {slide.description}
+                          </p>
+                          <button
+                            onClick={() => {
+                              if (slide.product) {
+                                setSelectedProduct(slide.product);
+                                setActiveImageIndex(0);
+                              }
+                            }}
+                            className="inline-block bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-400 hover:to-purple-500 text-white font-semibold text-[11px] sm:text-sm px-3.5 sm:px-6 py-1.5 sm:py-2.5 rounded-full transition shadow-lg shadow-purple-900/50 active:scale-95 cursor-pointer"
+                          >
+                            Ver Producto 🛒
+                          </button>
+                        </div>
+                        <div className="w-20 h-20 sm:w-36 sm:h-36 md:w-44 md:h-44 rounded-xl sm:rounded-2xl overflow-hidden border border-purple-500/30 bg-[#0d122b] shadow-xl shrink-0 p-1 flex items-center justify-center">
+                          <img
+                            src={slide.image || '/logo.png'}
+                            alt={slide.title || 'Producto'}
+                            className="w-full h-full object-contain"
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* REDES SOCIALES */}
+                    {slide.type === 'social' && (
+                      <div className={`w-full h-full bg-gradient-to-r ${slide.gradient || 'from-[#0b1c3a] to-[#200d3d]'} p-5 sm:p-10 flex flex-col justify-center rounded-[24px] sm:rounded-[32px] border border-purple-500/20 relative overflow-hidden`}>
+                        {slide.platform === 'instagram' ? (
+                          <div className="absolute -right-3 -bottom-5 w-40 h-40 sm:w-60 sm:h-60 text-pink-500/12 pointer-events-none select-none rotate-12">
+                            <svg viewBox="0 0 24 24" fill="currentColor" className="w-full h-full">
+                              <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/>
+                            </svg>
+                          </div>
+                        ) : (
+                          <div className="absolute -right-2 -bottom-5 w-40 h-40 sm:w-60 sm:h-60 text-blue-500/12 pointer-events-none select-none rotate-6">
+                            <svg viewBox="0 0 24 24" fill="currentColor" className="w-full h-full">
+                              <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+                            </svg>
+                          </div>
+                        )}
+
+                        <div className="relative z-10 max-w-xl">
+                          <div className="flex items-center gap-2 mb-1 sm:mb-2">
+                            <span className="inline-block bg-purple-500/25 border border-purple-400/40 text-purple-200 text-[9px] sm:text-[11px] font-bold px-2.5 py-0.5 rounded-full tracking-wide">
+                              {slide.badge}
+                            </span>
+                          </div>
+
+                          <h2 className="text-base sm:text-2xl md:text-3xl font-black text-white mb-1 leading-tight">
+                            {slide.title}
+                          </h2>
+                          
+                          <p className="text-slate-300 text-[11px] sm:text-xs md:text-sm mb-3 sm:mb-4 leading-relaxed line-clamp-2">
+                            {slide.description}
+                          </p>
+
+                          <div>
+                            <a
+                              href={slide.link || '#'}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className={`inline-flex items-center gap-2 font-semibold text-xs sm:text-sm px-4 sm:px-5 py-2 sm:py-2.5 rounded-full transition shadow-lg active:scale-95 ${
+                                slide.platform === 'instagram'
+                                  ? 'bg-gradient-to-r from-pink-600 via-rose-600 to-purple-600 hover:from-pink-500 text-white shadow-pink-900/50'
+                                  : 'bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 text-white shadow-blue-900/50'
+                              }`}
+                            >
+                              <span>{slide.btnText}</span>
+                              <span>➜</span>
+                            </a>
+                          </div>
+                        </div>
+
+                      </div>
+                    )}
+
+                  </div>
+                ))}
+              </div>
+
+              <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex flex-col gap-1.5 z-20 opacity-80 group-hover:opacity-100 transition-opacity">
+                <button
+                  onClick={() => setCurrentSlide((prev) => (prev - 1 + bannerSlides.length) % bannerSlides.length)}
+                  className="w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-black/60 hover:bg-purple-600 border border-purple-500/40 text-white flex items-center justify-center text-[10px] sm:text-xs backdrop-blur-md transition-all shadow-md active:scale-90 cursor-pointer"
+                  title="Anterior"
+                >
+                  ▲
+                </button>
+                <button
+                  onClick={() => setCurrentSlide((prev) => (prev + 1) % bannerSlides.length)}
+                  className="w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-black/60 hover:bg-purple-600 border border-purple-500/40 text-white flex items-center justify-center text-[10px] sm:text-xs backdrop-blur-md transition-all shadow-md active:scale-90 cursor-pointer"
+                  title="Siguiente"
+                >
+                  ▼
+                </button>
+              </div>
+
+              <div className="absolute left-2.5 top-1/2 -translate-y-1/2 flex flex-col gap-1.5 z-20">
+                {bannerSlides.map((_, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => setCurrentSlide(idx)}
+                    className={`transition-all rounded-full cursor-pointer ${
+                      currentSlide === idx
+                        ? 'w-2 h-4 sm:w-2.5 sm:h-6 bg-gradient-to-b from-blue-400 to-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.8)]'
+                        : 'w-2 h-2 sm:w-2.5 sm:h-2.5 bg-white/40 hover:bg-white/80'
+                    }`}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {/* TARJETAS LATERALES */}
+            <div className="flex flex-col sm:grid sm:grid-cols-2 lg:flex lg:flex-col gap-2.5 sm:gap-3 justify-between">
+              
+              <div className="bg-[#0d122b]/90 backdrop-blur-md border border-purple-500/30 rounded-2xl p-3 sm:p-4 shadow-xl col-span-2 lg:col-span-1">
+                <span className="text-[10px] sm:text-[11px] font-bold text-purple-300 uppercase tracking-wider block mb-2 text-center">
+                  🌟 SÍGUENOS EN REDES
+                </span>
+                
+                <div className="grid grid-cols-2 lg:flex lg:flex-col gap-2">
+                  <a
+                    href={instagramUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-between px-3 py-2 rounded-xl bg-gradient-to-r from-pink-600/30 via-purple-600/20 to-orange-500/10 hover:from-pink-600 hover:via-purple-600 border border-pink-500/40 text-white transition-all group shadow-md"
+                  >
+                    <div className="flex items-center gap-2">
+                      <div className="w-6 h-6 rounded-lg bg-gradient-to-tr from-amber-500 via-rose-500 to-purple-600 flex items-center justify-center text-xs shadow">
+                        📷
+                      </div>
+                      <div className="min-w-0">
+                        <span className="text-xs font-bold block truncate">Instagram</span>
+                        <span className="text-[9px] text-slate-300 hidden sm:block truncate">@omniverse_store01</span>
+                      </div>
+                    </div>
+                    <span className="text-xs opacity-75 group-hover:translate-x-1 transition-transform">➜</span>
+                  </a>
+
+                  <a
+                    href={facebookUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-between px-3 py-2 rounded-xl bg-gradient-to-r from-blue-700/30 to-blue-600/10 hover:from-blue-700 border border-blue-500/40 text-white transition-all group shadow-md"
+                  >
+                    <div className="flex items-center gap-2">
+                      <div className="w-6 h-6 rounded-lg bg-blue-600 flex items-center justify-center text-xs font-bold shadow">
+                        f
+                      </div>
+                      <div className="min-w-0">
+                        <span className="text-xs font-bold block truncate">Facebook</span>
+                        <span className="text-[9px] text-slate-300 hidden sm:block truncate">Omniverse Store</span>
+                      </div>
+                    </div>
+                    <span className="text-xs opacity-75 group-hover:translate-x-1 transition-transform">➜</span>
+                  </a>
+                </div>
+              </div>
+
+              <div className="bg-[#0d122b]/85 backdrop-blur-md border border-purple-500/25 rounded-2xl p-2.5 sm:p-3 flex items-center gap-3 shadow-lg">
+                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-blue-500/20 text-blue-400 flex items-center justify-center text-sm sm:text-base">
+                  🚚
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-white">Envíos a todo el país</h4>
+                  <p className="text-[10px] text-slate-400">Rápidos y con seguimiento</p>
+                </div>
+              </div>
+
+              <div className="bg-[#0d122b]/85 backdrop-blur-md border border-purple-500/25 rounded-2xl p-2.5 sm:p-3 flex items-center gap-3 shadow-lg">
+                <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center text-sm sm:text-base">
+                  🛡️
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-white">Compra Segura</h4>
+                  <p className="text-[10px] text-slate-400">Garantía en cada orden</p>
+                </div>
+              </div>
+
+            </div>
+
+          </div>
+
+          {/* 3. CATEGORÍAS + CATÁLOGO */}
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 sm:gap-8" id="catalogo">
+            
+            <aside className="lg:col-span-1">
+              <div className="bg-[#0d122b]/85 backdrop-blur-md border border-purple-500/25 rounded-2xl p-3 sm:p-4 sticky top-20 shadow-xl">
+                <h3 className="text-xs font-bold text-purple-300 uppercase tracking-wider mb-2.5 sm:mb-4 flex items-center gap-2">
+                  <span>📁</span> CATEGORÍAS
+                </h3>
+                
+                <div className="flex lg:flex-col gap-1.5 sm:gap-2 overflow-x-auto pb-1 lg:pb-0 scrollbar-none">
+                  {categories.map((cat) => (
+                    <button
+                      key={cat.name}
+                      onClick={() => setSelectedCategory(cat.name)}
+                      className={`flex items-center gap-2 sm:gap-3 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all text-left whitespace-nowrap cursor-pointer shrink-0 lg:shrink ${
+                        selectedCategory === cat.name
+                          ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-md shadow-purple-900/50'
+                          : 'text-slate-300 hover:bg-white/5 hover:text-white bg-[#141a38]/40 lg:bg-transparent'
+                      }`}
+                    >
+                      <span className="text-sm">{cat.icon}</span>
+                      <span>{cat.name}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </aside>
+
+            <main className="lg:col-span-3">
+              <div className="flex items-center justify-between mb-4 sm:mb-6">
+                <h2 className="text-lg sm:text-2xl font-bold text-white flex items-center gap-2">
+                  Catálogo de Productos
+                  <span className="text-xs bg-purple-900/60 text-purple-300 px-2 py-0.5 rounded-full border border-purple-600/40">
+                    {filteredProducts.length} disponibles
+                  </span>
+                </h2>
+              </div>
+
+              {loading ? (
+                <div className="text-center py-20 text-slate-400 flex flex-col items-center justify-center gap-3">
+                  <div className="w-8 h-8 border-4 border-purple-500 border-t-transparent rounded-full animate-spin"></div>
+                  <p className="text-xs">Cargando catálogo...</p>
+                </div>
+              ) : filteredProducts.length === 0 ? (
+                <div className="text-center py-16 px-4 bg-[#0d122b]/75 backdrop-blur-md rounded-3xl border border-purple-500/30 text-slate-300 shadow-xl flex flex-col items-center justify-center">
+                  <div className="w-14 h-14 rounded-2xl bg-purple-500/10 border border-purple-500/30 flex items-center justify-center text-3xl mb-3 shadow-inner">
+                    🚀
+                  </div>
+                  <h3 className="text-base sm:text-lg font-bold text-white mb-2">
+                    ¡Próximamente en {selectedCategory !== 'Todas' ? selectedCategory : 'nuestra tienda'}!
+                  </h3>
+                  <p className="text-xs text-slate-400 max-w-md mb-5 leading-relaxed">
+                    Estamos preparando nuevos ingresos y productos exclusivos para esta sección.
+                  </p>
+                  <button
+                    onClick={() => setSelectedCategory('Todas')}
+                    className="bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 border border-purple-500/40 px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer"
+                  >
+                    Ver productos disponibles
+                  </button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 md:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-6">
+                  {filteredProducts.map((product) => {
+                    const isFav = favorites.includes(product.id);
+                    const isOutOfStock = product.stock <= 0;
+                    const isLowStock = product.stock > 0 && product.stock <= 2;
+
+                    return (
+                      <div
+                        key={product.id}
+                        className="bg-[#0d122b]/85 backdrop-blur-md rounded-2xl overflow-hidden border border-purple-500/25 flex flex-col hover:border-purple-400/60 transition-all duration-300 shadow-xl group hover:-translate-y-1"
+                      >
+                        {/* IMAGEN DE PRODUCTO */}
+                        <div 
+                          className="h-36 sm:h-52 w-full bg-[#121633] relative overflow-hidden cursor-pointer flex items-center justify-center p-2"
+                          onClick={() => {
+                            setSelectedProduct(product);
+                            setActiveImageIndex(0);
+                          }}
+                        >
+                          <img
+                            src={product.image_url || (product.images && product.images[0]) || 'https://via.placeholder.com/400'}
+                            alt={product.title}
+                            className={`w-full h-full object-contain group-hover:scale-105 transition-transform duration-300 ${isOutOfStock ? 'grayscale opacity-60' : ''}`}
+                          />
+
+                          {isLowStock && (
+                            <span className="absolute bottom-2 left-2 bg-amber-500/95 text-black text-[9px] sm:text-[10px] font-black px-2 py-0.5 rounded-full shadow-md">
+                              🔥 Quedan {product.stock}
+                            </span>
+                          )}
+                          {isOutOfStock && (
+                            <span className="absolute bottom-2 left-2 bg-red-600/95 text-white text-[9px] sm:text-[10px] font-black px-2 py-0.5 rounded-full shadow-md">
+                              ❌ Agotado
+                            </span>
+                          )}
+
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleFavorite(product.id);
+                            }}
+                            className="absolute top-2 right-2 p-1.5 sm:p-2 bg-[#060814]/75 backdrop-blur-md rounded-full text-slate-300 hover:text-pink-400 transition cursor-pointer"
+                            title="Favorito"
+                          >
+                            <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4" fill={isFav ? '#f43f5e' : 'none'} stroke={isFav ? '#f43f5e' : 'currentColor'} viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                            </svg>
+                          </button>
+                        </div>
+
+                        {/* CUERPO DE LA TARJETA */}
+                        <div className="p-3 sm:p-5 flex-1 flex flex-col justify-between">
+                          <div 
+                            className="cursor-pointer"
+                            onClick={() => {
+                              setSelectedProduct(product);
+                              setActiveImageIndex(0);
+                            }}
+                          >
+                            <h3 className="text-xs sm:text-base font-bold text-white mb-1 group-hover:text-purple-300 transition-colors line-clamp-1">
+                              {product.title}
+                            </h3>
+                            <p className="text-slate-400 text-[10px] sm:text-xs mb-2 sm:mb-4 line-clamp-2 leading-relaxed">
+                              {product.description}
+                            </p>
+                          </div>
+                          
+                          <div>
+                            <div className="text-sm sm:text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-300 mb-2 sm:mb-4">
+                              ${Number(product.price).toLocaleString('es-CO')}
+                            </div>
+                            <button
+                              onClick={() => addToCart(product)}
+                              disabled={isOutOfStock}
+                              className={`w-full font-medium py-2 sm:py-2.5 px-2 sm:px-4 rounded-xl transition duration-200 text-[11px] sm:text-sm flex items-center justify-center gap-1.5 ${
+                                isOutOfStock
+                                  ? 'bg-slate-700 text-slate-400 cursor-not-allowed'
+                                  : 'bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white shadow-lg shadow-purple-900/30 active:scale-95 cursor-pointer'
+                              }`}
+                            >
+                              <span>{isOutOfStock ? 'Agotado' : 'Añadir'}</span>
+                              <span>🛒</span>
+                            </button>
+                          </div>
+                        </div>
+
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </main>
+
+          </div>
+
+        </div>
+
+        {/* 4. MODAL DETALLE DE PRODUCTO */}
+        {selectedProduct && (
+          <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+            <div className="bg-[#0b0e24] border border-purple-500/40 rounded-3xl max-w-3xl w-full p-4 sm:p-8 relative shadow-2xl my-auto max-h-[92vh] flex flex-col">
+              <button
+                onClick={() => setSelectedProduct(null)}
+                className="absolute top-4 right-4 text-slate-400 hover:text-white text-xl p-1 cursor-pointer z-10"
+              >
+                ✕
+              </button>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 items-start mt-2 overflow-y-auto pr-1">
+                <div>
+                  <div className="h-56 sm:h-72 w-full bg-[#0a0d24] rounded-2xl overflow-hidden border border-purple-500/20 mb-3 shadow-lg flex items-center justify-center p-2">
+                    <img
+                      src={
+                        selectedProduct.images && selectedProduct.images.length > 0
+                          ? selectedProduct.images[activeImageIndex]
+                          : selectedProduct.image_url
+                      }
+                      alt={selectedProduct.title}
+                      className="w-full h-full max-h-full object-contain transition-all duration-300"
+                    />
+                  </div>
+
+                  {selectedProduct.images && selectedProduct.images.length > 1 && (
+                    <div className="flex gap-2 justify-center overflow-x-auto pb-1">
+                      {selectedProduct.images.map((img, idx) => (
+                        <button
+                          key={idx}
+                          onClick={() => setActiveImageIndex(idx)}
+                          className={`w-14 h-14 sm:w-16 sm:h-16 rounded-xl overflow-hidden border-2 transition-all cursor-pointer shrink-0 p-1 bg-[#121633] flex items-center justify-center ${
+                            activeImageIndex === idx
+                              ? 'border-purple-400 scale-105 shadow-md shadow-purple-500/40'
+                              : 'border-purple-900/40 opacity-70 hover:opacity-100'
+                          }`}
+                        >
+                          <img src={img} alt={`Vista ${idx + 1}`} className="w-full h-full object-contain" />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex flex-col justify-between h-full">
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="bg-purple-500/20 text-purple-300 text-[10px] sm:text-xs px-2.5 py-0.5 rounded-full border border-purple-500/30">
+                        {selectedProduct.category || 'Tecnología'}
+                      </span>
+                      {selectedProduct.stock <= 2 && selectedProduct.stock > 0 && (
+                        <span className="bg-amber-500/20 text-amber-300 text-[10px] sm:text-xs px-2 py-0.5 rounded-full border border-amber-500/30">
+                          Quedan {selectedProduct.stock} uds
+                        </span>
+                      )}
+                    </div>
+
+                    <h3 className="text-base sm:text-2xl font-bold text-white mb-2 leading-snug">
+                      {selectedProduct.title}
+                    </h3>
+                    <div className="text-2xl sm:text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-300 mb-3 sm:mb-4">
+                      ${Number(selectedProduct.price).toLocaleString('es-CO')} COP
+                    </div>
+                    
+                    <div className="text-slate-300 text-xs sm:text-sm space-y-2.5 whitespace-pre-line leading-relaxed max-h-44 sm:max-h-56 overflow-y-auto pr-2 border-t border-b border-purple-500/20 py-3 mb-4">
+                      {selectedProduct.full_description || selectedProduct.description}
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      addToCart(selectedProduct);
+                      setSelectedProduct(null);
+                    }}
+                    disabled={selectedProduct.stock <= 0}
+                    className={`w-full font-bold py-3 sm:py-3.5 rounded-xl transition duration-200 text-xs sm:text-sm flex items-center justify-center gap-2 ${
+                      selectedProduct.stock <= 0
+                        ? 'bg-slate-700 text-slate-400 cursor-not-allowed'
+                        : 'bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white shadow-xl shadow-purple-900/40 active:scale-95 cursor-pointer'
+                    }`}
+                  >
+                    <span>{selectedProduct.stock <= 0 ? 'Producto Agotado' : 'Añadir al Carrito'}</span>
+                    <span>🛒</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 5. DRAWER CARRITO */}
+        {isCartOpen && (
+          <div className="fixed inset-0 z-50 overflow-hidden">
+            <div 
+              className="absolute inset-0 bg-black/70 backdrop-blur-sm transition-opacity"
+              onClick={() => setIsCartOpen(false)}
+            />
+            <div className="absolute inset-y-0 right-0 max-w-full flex pl-6 sm:pl-10">
+              <div className="w-screen max-w-md bg-[#0b0e24] border-l border-purple-500/30 p-4 sm:p-6 flex flex-col justify-between shadow-2xl">
+                <div>
+                  <div className="flex items-center justify-between pb-3 sm:pb-4 border-b border-purple-500/20">
+                    <h2 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+                      <span>🛒</span> Tu Carrito ({cartItemCount})
+                    </h2>
+                    <button 
+                      onClick={() => setIsCartOpen(false)}
+                      className="text-slate-400 hover:text-white p-1 text-xl cursor-pointer"
+                    >
+                      ✕
+                    </button>
+                  </div>
+
+                  <div className="mt-3 space-y-3 max-h-[58vh] overflow-y-auto pr-1">
+                    {cart.length === 0 ? (
+                      <div className="text-center py-12 text-slate-400">
+                        <p className="text-4xl mb-2">🛍️</p>
+                        <p className="text-xs sm:text-sm">Tu carrito está vacío</p>
+                      </div>
+                    ) : (
+                      cart.map((item) => (
+                        <div 
+                          key={item.id} 
+                          className="bg-[#121638] border border-purple-500/20 rounded-xl p-2.5 sm:p-3 flex items-center gap-3"
+                        >
+                          <img 
+                            src={item.image_url || (item.images && item.images[0]) || 'https://via.placeholder.com/100'} 
+                            alt={item.title} 
+                            className="w-12 h-12 sm:w-14 sm:h-14 object-contain rounded-lg bg-slate-900 p-1"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <h4 className="text-xs font-semibold text-white truncate">{item.title}</h4>
+                            <p className="text-xs text-purple-300 font-bold">
+                              ${Number(item.price).toLocaleString('es-CO')}
+                            </p>
+                            <div className="flex items-center gap-2 mt-1.5">
+                              <button 
+                                onClick={() => updateQuantity(item.id, -1)}
+                                className="w-5 h-5 sm:w-6 sm:h-6 bg-[#1a204d] hover:bg-purple-600 rounded text-xs font-bold text-white flex items-center justify-center cursor-pointer"
+                              >
+                                -
+                              </button>
+                              <span className="text-xs font-semibold">{item.quantity}</span>
+                              <button 
+                                onClick={() => updateQuantity(item.id, 1)}
+                                className="w-5 h-5 sm:w-6 sm:h-6 bg-[#1a204d] hover:bg-purple-600 rounded text-xs font-bold text-white flex items-center justify-center cursor-pointer"
+                              >
+                                +
+                              </button>
+                            </div>
+                          </div>
+                          <button 
+                            onClick={() => removeFromCart(item.id)}
+                            className="text-red-400 hover:text-red-300 p-1 text-sm cursor-pointer"
+                            title="Eliminar"
+                          >
+                            🗑️
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                {cart.length > 0 && (
+                  <div className="pt-3 sm:pt-4 border-t border-purple-500/20">
+                    <div className="flex justify-between items-center mb-3 sm:mb-4">
+                      <span className="text-xs sm:text-sm text-slate-300">Subtotal:</span>
+                      <span className="text-lg sm:text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-300">
+                        ${cartSubtotal.toLocaleString('es-CO')} COP
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setIsCartOpen(false);
+                        setIsCheckoutOpen(true);
+                      }}
+                      className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-bold py-3 rounded-xl transition duration-200 shadow-lg shadow-purple-900/40 text-xs sm:text-sm active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      <span>Continuar con el Pedido</span>
+                      <span>➡️</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 6. CHECKOUT CON CÁLCULO DE COSTO DE ENVÍO */}
+        {isCheckoutOpen && (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+            <div className="bg-[#0d122b] border border-purple-500/40 rounded-3xl max-w-lg w-full p-4 sm:p-8 relative shadow-2xl my-auto">
+              <button
+                onClick={() => setIsCheckoutOpen(false)}
+                className="absolute top-4 right-4 text-slate-400 hover:text-white text-lg cursor-pointer"
+              >
+                ✕
+              </button>
+
+              <div className="flex items-center gap-2 mb-1.5">
+                <span className="text-xl sm:text-2xl">📋</span>
+                <h3 className="text-base sm:text-xl font-bold text-white">Datos de tu Pedido</h3>
+              </div>
+              <p className="text-[11px] sm:text-xs text-slate-400 mb-4 sm:mb-6">
+                Completa tus datos para registrar la orden en el sistema y despachar por WhatsApp.
+              </p>
+
+              <form onSubmit={handleCheckoutSubmit} className="space-y-3 sm:space-y-4 text-xs">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3">
+                  <div>
+                    <label className="block text-slate-300 font-semibold mb-1">Nombre Completo *</label>
+                    <input
+                      type="text"
+                      required
+                      value={customerName}
+                      onChange={(e) => setCustomerName(e.target.value)}
+                      placeholder="Ej. Laura Gómez"
+                      className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3 py-2 sm:py-2.5 text-white focus:outline-none focus:border-purple-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-300 font-semibold mb-1">Teléfono / Celular *</label>
+                    <input
+                      type="tel"
+                      required
+                      value={customerPhone}
+                      onChange={(e) => setCustomerPhone(e.target.value)}
+                      placeholder="Ej. 300 123 4567"
+                      className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3 py-2 sm:py-2.5 text-white focus:outline-none focus:border-purple-400"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3">
+                  <div>
+                    <label className="block text-slate-300 font-semibold mb-1">Ciudad / Municipio *</label>
+                    <input
+                      type="text"
+                      required
+                      value={customerCity}
+                      onChange={(e) => setCustomerCity(e.target.value)}
+                      placeholder="Ej. Bogotá, Medellín..."
+                      className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3 py-2 sm:py-2.5 text-white focus:outline-none focus:border-purple-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-300 font-semibold mb-1">Tipo de Entrega</label>
+                    <select
+                      value={deliveryType}
+                      onChange={(e) => setDeliveryType(e.target.value as 'domicilio' | 'recogida')}
+                      className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3 py-2 sm:py-2.5 text-white focus:outline-none focus:border-purple-400 cursor-pointer"
+                    >
+                      <option value="domicilio">🚚 Envío a Domicilio (+$15.000 COP)</option>
+                      <option value="recogida">🏬 Pasa a Recoger (Gratis - $0 COP)</option>
+                    </select>
+                  </div>
+                </div>
+
+                {deliveryType === 'domicilio' && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3 bg-[#121638]/60 p-3 rounded-2xl border border-purple-500/20">
+                    <div>
+                      <label className="block text-slate-300 font-semibold mb-1">Dirección de Entrega *</label>
+                      <input
+                        type="text"
+                        required
+                        value={customerAddress}
+                        onChange={(e) => setCustomerAddress(e.target.value)}
+                        placeholder="Ej. Calle 123 # 45-67 Apto 201"
+                        className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-purple-400"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-slate-300 font-semibold mb-1">Barrio</label>
+                      <input
+                        type="text"
+                        value={customerNeighborhood}
+                        onChange={(e) => setCustomerNeighborhood(e.target.value)}
+                        placeholder="Ej. Chapinero, Poblado..."
+                        className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-purple-400"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-slate-300 font-semibold mb-1">Método de Pago Preferido</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setPaymentMethod('transferencia')}
+                      className={`p-2 sm:p-2.5 rounded-xl border text-center transition font-medium cursor-pointer text-[11px] sm:text-xs ${
+                        paymentMethod === 'transferencia'
+                          ? 'border-purple-500 bg-purple-600/30 text-white'
+                          : 'border-purple-500/20 bg-[#141a38] text-slate-400'
+                      }`}
+                    >
+                      📲 Transferencia (Nequi / Bancolombia)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPaymentMethod('efectivo')}
+                      className={`p-2 sm:p-2.5 rounded-xl border text-center transition font-medium cursor-pointer text-[11px] sm:text-xs ${
+                        paymentMethod === 'efectivo'
+                          ? 'border-purple-500 bg-purple-600/30 text-white'
+                          : 'border-purple-500/20 bg-[#141a38] text-slate-400'
+                      }`}
+                    >
+                      💵 Efectivo contra entrega
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-slate-300 font-semibold mb-1">Notas adicionales (opcional)</label>
+                  <textarea
+                    rows={2}
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    placeholder="Instrucciones del timbre, referencias..."
+                    className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3 py-1.5 text-white focus:outline-none focus:border-purple-400 text-xs"
+                  />
+                </div>
+
+                <div className="bg-[#121638] rounded-xl p-3 space-y-1.5 border border-purple-500/20">
+                  <div className="flex justify-between text-xs text-slate-300">
+                    <span>Subtotal de productos:</span>
+                    <span>${cartSubtotal.toLocaleString('es-CO')} COP</span>
+                  </div>
+                  <div className="flex justify-between text-xs text-slate-300">
+                    <span>Costo de Envío:</span>
+                    <span className={deliveryType === 'domicilio' ? 'text-amber-300 font-semibold' : 'text-emerald-400 font-semibold'}>
+                      {deliveryType === 'domicilio' ? `+$${SHIPPING_COST.toLocaleString('es-CO')} COP` : 'Gratis ($0 COP)'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between pt-1.5 border-t border-purple-500/20 font-black text-sm sm:text-base">
+                    <span className="text-white">TOTAL A PAGAR:</span>
+                    <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-300 text-base sm:text-lg">
+                      ${cartGrandTotal.toLocaleString('es-CO')} COP
+                    </span>
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isSubmittingOrder}
+                  className="w-full bg-[#25D366] hover:bg-[#20ba59] text-white font-bold py-3 sm:py-3.5 rounded-xl transition duration-200 shadow-xl shadow-emerald-900/30 text-xs sm:text-sm flex items-center justify-center gap-2 active:scale-95 cursor-pointer disabled:opacity-50"
+                >
+                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z"/>
+                  </svg>
+                  <span>{isSubmittingOrder ? 'Guardando pedido...' : 'Confirmar por WhatsApp'}</span>
+                </button>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* 7. MODAL MI CUENTA */}
+        {showAuthModal && (
+          <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4">
+            <div className="bg-[#0d122b] border border-purple-500/40 rounded-2xl max-w-md w-full p-5 sm:p-6 relative shadow-2xl">
+              <button
+                onClick={() => setShowAuthModal(false)}
+                className="absolute top-4 right-4 text-slate-400 hover:text-white cursor-pointer"
+              >
+                ✕
+              </button>
+
+              <div className="flex border-b border-purple-500/20 mb-4 sm:mb-5">
+                <button
+                  onClick={() => { setAuthTab('login'); setAuthMsg(null); }}
+                  className={`flex-1 py-2 text-xs sm:text-sm font-bold border-b-2 transition cursor-pointer ${
+                    authTab === 'login' ? 'border-purple-400 text-white' : 'border-transparent text-slate-400'
+                  }`}
+                >
+                  Iniciar Sesión
+                </button>
+                <button
+                  onClick={() => { setAuthTab('register'); setAuthMsg(null); }}
+                  className={`flex-1 py-2 text-xs sm:text-sm font-bold border-b-2 transition cursor-pointer ${
+                    authTab === 'register' ? 'border-purple-400 text-white' : 'border-transparent text-slate-400'
+                  }`}
+                >
+                  Crear Cuenta
+                </button>
+              </div>
+
+              {authMsg && (
+                <div className={`p-2.5 sm:p-3 rounded-xl mb-3 text-xs font-semibold ${
+                  authMsg.type === 'ok' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' : 'bg-red-500/20 text-red-300 border border-red-500/40'
+                }`}>
+                  {authMsg.text}
+                </div>
+              )}
+
+              {authTab === 'login' ? (
+                <form className="space-y-3">
+                  <p className="text-xs text-slate-400 mb-2">Ingresa a tu cuenta para consultar tus pedidos.</p>
+                  <input
+                    type="email"
+                    placeholder="Correo electrónico"
+                    required
+                    className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-4 py-2.5 text-xs sm:text-sm text-white focus:outline-none focus:border-purple-400"
+                  />
+                  <input
+                    type="password"
+                    placeholder="Contraseña"
+                    required
+                    className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-4 py-2.5 text-xs sm:text-sm text-white focus:outline-none focus:border-purple-400"
+                  />
+                  <button className="w-full bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold py-2.5 rounded-xl text-xs sm:text-sm transition active:scale-95 shadow-md cursor-pointer">
+                    Ingresar
+                  </button>
+                </form>
+              ) : (
+                <form onSubmit={handleRegisterSubmit} className="space-y-3 text-xs">
+                  <p className="text-slate-400 mb-1">Regístrate para recibir descuentos exclusivos y novedades.</p>
+                  
+                  <div>
+                    <label className="block text-slate-300 font-semibold mb-1">Nombre Completo *</label>
+                    <input
+                      type="text"
+                      required
+                      value={regName}
+                      onChange={(e) => setRegName(e.target.value)}
+                      placeholder="Ej. Laura Gómez"
+                      className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3.5 py-2 text-white focus:outline-none focus:border-purple-400"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-300 font-semibold mb-1">Correo Electrónico *</label>
+                    <input
+                      type="email"
+                      required
+                      value={regEmail}
+                      onChange={(e) => setRegEmail(e.target.value)}
+                      placeholder="ejemplo@correo.com"
+                      className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3.5 py-2 text-white focus:outline-none focus:border-purple-400"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-300 font-semibold mb-1">Teléfono / WhatsApp *</label>
+                    <input
+                      type="tel"
+                      required
+                      value={regPhone}
+                      onChange={(e) => setRegPhone(e.target.value)}
+                      placeholder="300 123 4567"
+                      className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3.5 py-2 text-white focus:outline-none focus:border-purple-400"
+                    />
+                  </div>
+
+                  <div className="flex items-start gap-2 pt-2 border-t border-purple-500/20">
+                    <input
+                      type="checkbox"
+                      id="terms"
+                      checked={regAcceptedTerms}
+                      onChange={(e) => setRegAcceptedTerms(e.target.checked)}
+                      className="mt-0.5 rounded border-purple-500 text-purple-600 focus:ring-purple-500 cursor-pointer"
+                    />
+                    <label htmlFor="terms" className="text-[10px] sm:text-[11px] text-slate-300 leading-tight">
+                      Acepto los{' '}
+                      <button
+                        type="button"
+                        onClick={() => setShowTermsModal(true)}
+                        className="text-purple-400 underline font-semibold cursor-pointer"
+                      >
+                        Términos y la Política de Tratamiento de Datos
+                      </button>{' '}
+                      para recibir información comercial (Ley 1581 de 2012).
+                    </label>
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="w-full bg-gradient-to-r from-blue-600 to-purple-600 text-white font-bold py-2.5 rounded-xl text-xs sm:text-sm transition active:scale-95 shadow-md mt-2 cursor-pointer"
+                  >
+                    Registrarme
+                  </button>
+                </form>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* 8. MODAL DE TRATAMIENTO DE DATOS */}
+        {showTermsModal && (
+          <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-4">
+            <div className="bg-[#0b0e24] border border-purple-500/40 rounded-2xl max-w-lg w-full p-5 sm:p-6 relative shadow-2xl max-h-[80vh] flex flex-col">
+              <button
+                onClick={() => setShowTermsModal(false)}
+                className="absolute top-4 right-4 text-slate-400 hover:text-white cursor-pointer"
+              >
+                ✕
+              </button>
+              <h3 className="text-sm sm:text-base font-bold text-white mb-2 sm:mb-3">
+                Política de Tratamiento de Datos Personales
+              </h3>
+              <div className="text-xs text-slate-300 space-y-2 overflow-y-auto pr-2 leading-relaxed flex-1">
+                <p>
+                  En cumplimiento de la Ley 1581 de 2012 de Colombia, <strong>Omniverse Store</strong> informa que los datos suministrados serán tratados de forma segura.
+                </p>
+                <p>
+                  <strong>Finalidad:</strong>
+                </p>
+                <ul className="list-disc pl-4 space-y-1 text-[11px] sm:text-xs">
+                  <li>Procesar, despachar y entregar pedidos.</li>
+                  <li>Atención al cliente y confirmación de pagos vía WhatsApp.</li>
+                  <li>Comunicaciones promocionales y novedades.</li>
+                </ul>
+              </div>
+              <button
+                onClick={() => setShowTermsModal(false)}
+                className="mt-3 bg-purple-600 hover:bg-purple-500 text-white py-2 rounded-xl text-xs font-bold transition cursor-pointer"
+              >
+                Entendido y de acuerdo
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* 9. BOTÓN FLOTANTE WHATSAPP */}
+        <div className="fixed bottom-4 sm:bottom-6 right-4 sm:right-6 z-40 flex items-end gap-2.5 sm:gap-3 pointer-events-auto">
+          {showWhatsappBubble && (
+            <div className="hidden sm:flex items-center gap-2 bg-[#0d122b]/95 border border-emerald-500/40 px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-2xl shadow-2xl backdrop-blur-md animate-bounce">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+              <span className="text-xs font-semibold text-emerald-300">
+                ¿Necesitas ayuda? ¡Escríbenos! 👋
+              </span>
+              <button
+                onClick={() => setShowWhatsappBubble(false)}
+                className="text-slate-400 hover:text-white text-xs ml-1 cursor-pointer"
+                title="Cerrar"
+              >
+                ✕
+              </button>
             </div>
           )}
 
-          <form onSubmit={handleLogin} className="space-y-4 text-xs" autoComplete="off">
-            <div>
-              <label className="block text-slate-300 font-semibold mb-1">Correo Electrónico</label>
-              <input
-                type="email"
-                required
-                autoComplete="off"
-                value={loginEmail}
-                onChange={(e) => setLoginEmail(e.target.value)}
-                placeholder="ejemplo@correo.com"
-                className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-purple-400 text-sm"
-              />
-            </div>
-
-            <div>
-              <label className="block text-slate-300 font-semibold mb-1">Contraseña</label>
-              <input
-                type="password"
-                required
-                autoComplete="new-password"
-                value={loginPassword}
-                onChange={(e) => setLoginPassword(e.target.value)}
-                placeholder="••••••••••••"
-                className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-purple-400 text-sm"
-              />
-            </div>
-
-            <button
-              type="submit"
-              disabled={isLoggingIn}
-              className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-bold py-3.5 rounded-xl transition shadow-lg shadow-purple-900/40 text-sm active:scale-95 disabled:opacity-50 cursor-pointer"
-            >
-              {isLoggingIn ? 'Verificando...' : 'Entrar al Panel'}
-            </button>
-          </form>
-
-          <div className="text-center mt-6">
-            <Link href="/" className="text-xs text-purple-400 hover:underline">
-              ← Volver a la Tienda
-            </Link>
-          </div>
+          <a
+            href={whatsappUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="bg-[#25D366] hover:bg-[#20ba59] text-white p-3 sm:p-3.5 rounded-full shadow-2xl transition-all hover:scale-110 flex items-center justify-center border-2 border-white/20 active:scale-95 relative"
+            title="Chatear por WhatsApp"
+          >
+            <span className="absolute -top-1 -right-1 w-3 sm:w-3.5 h-3 sm:h-3.5 bg-red-500 border-2 border-white rounded-full"></span>
+            <svg className="w-6 h-6 sm:w-7 sm:h-7" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z"/>
+            </svg>
+          </a>
         </div>
+
+        {/* 10. PIE DE PÁGINA */}
+        <footer className="border-t border-purple-900/30 bg-[#060814]/90 py-6 sm:py-8 text-center text-xs text-slate-500 mt-8 sm:mt-12">
+          <div className="flex flex-wrap justify-center items-center gap-3 sm:gap-4 mb-3">
+            <a 
+              href={instagramUrl} 
+              target="_blank" 
+              rel="noopener noreferrer" 
+              className="hover:text-pink-400 transition"
+            >
+              Instagram: @omniverse_store01
+            </a>
+            <span>•</span>
+            <a 
+              href={facebookUrl} 
+              target="_blank" 
+              rel="noopener noreferrer" 
+              className="hover:text-blue-400 transition"
+            >
+              Facebook: Omniverse Store
+            </a>
+            <span>•</span>
+            <a 
+              href={whatsappUrl} 
+              target="_blank" 
+              rel="noopener noreferrer" 
+              className="hover:text-emerald-400 transition"
+            >
+              WhatsApp: +57 305 778 5317
+            </a>
+          </div>
+          <p className="mb-1.5">© 2026 Omniverse Store. Todos los derechos reservados.</p>
+          <p className="text-slate-600 text-[11px]">Desarrollado con Next.js, Supabase y Vercel</p>
+        </footer>
+
       </div>
-    );
-  }
-
-  return (
-    <div className="min-h-screen bg-[#060814] text-slate-100 flex flex-col font-sans">
-      <header className="sticky top-0 z-30 bg-[#0d122b]/90 backdrop-blur-md border-b border-purple-500/20 px-4 sm:px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <span className="text-xl">⚙️</span>
-          <div>
-            <h1 className="text-sm sm:text-base font-bold text-white leading-tight">Panel de Administración</h1>
-            <p className="text-[10px] sm:text-[11px] text-purple-300">Sesión Administrativa Activa</p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2 sm:gap-3">
-          <button
-            onClick={fetchData}
-            className="text-xs bg-[#141a38] hover:bg-[#1f2652] text-slate-200 border border-purple-500/30 px-2.5 sm:px-3 py-1.5 rounded-lg transition cursor-pointer"
-          >
-            🔄 Actualizar
-          </button>
-          <Link
-            href="/"
-            className="text-xs bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 border border-purple-500/40 px-2.5 sm:px-3 py-1.5 rounded-lg transition"
-          >
-            🏪 Ver Tienda
-          </Link>
-          <button
-            onClick={handleLogout}
-            className="text-xs bg-rose-900/40 hover:bg-rose-900/70 text-rose-200 border border-rose-700/40 px-2.5 sm:px-3 py-1.5 rounded-lg transition cursor-pointer"
-          >
-            Cerrar Sesión
-          </button>
-        </div>
-      </header>
-
-      {/* PESTAÑAS */}
-      <div className="bg-[#0b0e24] border-b border-purple-500/20 px-4 sm:px-6">
-        <div className="max-w-7xl mx-auto flex gap-2 overflow-x-auto py-2.5 scrollbar-none">
-          <button
-            onClick={() => setActiveTab('dashboard')}
-            className={`px-3.5 sm:px-4 py-2 rounded-xl text-xs font-semibold transition cursor-pointer shrink-0 ${
-              activeTab === 'dashboard'
-                ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-md'
-                : 'text-slate-400 hover:text-white hover:bg-white/5'
-            }`}
-          >
-            📊 Resumen & Métricas
-          </button>
-          <button
-            onClick={() => setActiveTab('orders')}
-            className={`relative px-3.5 sm:px-4 py-2 rounded-xl text-xs font-semibold transition cursor-pointer shrink-0 ${
-              activeTab === 'orders'
-                ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-md'
-                : 'text-slate-400 hover:text-white hover:bg-white/5'
-            }`}
-          >
-            📦 Pedidos
-            {orders.filter((o) => o.status === 'pendiente').length > 0 && (
-              <span className="ml-2 bg-amber-500 text-black font-black text-[10px] px-1.5 py-0.2 rounded-full">
-                {orders.filter((o) => o.status === 'pendiente').length}
-              </span>
-            )}
-          </button>
-          <button
-            onClick={() => setActiveTab('inventory')}
-            className={`relative px-3.5 sm:px-4 py-2 rounded-xl text-xs font-semibold transition cursor-pointer shrink-0 ${
-              activeTab === 'inventory'
-                ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-md'
-                : 'text-slate-400 hover:text-white hover:bg-white/5'
-            }`}
-          >
-            🏷️ Inventario & Stock
-            {lowStockProducts.length > 0 && (
-              <span className="ml-2 bg-rose-500 text-white font-bold text-[10px] px-1.5 py-0.2 rounded-full">
-                {lowStockProducts.length}
-              </span>
-            )}
-          </button>
-          <button
-            onClick={() => setActiveTab('customers')}
-            className={`px-3.5 sm:px-4 py-2 rounded-xl text-xs font-semibold transition cursor-pointer shrink-0 ${
-              activeTab === 'customers'
-                ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-md'
-                : 'text-slate-400 hover:text-white hover:bg-white/5'
-            }`}
-          >
-            👥 Clientes ({profiles.length})
-          </button>
-        </div>
-      </div>
-
-      <main className="max-w-7xl mx-auto w-full p-4 sm:p-6 flex-1">
-        {loading ? (
-          <div className="py-20 text-center text-slate-400 flex flex-col items-center justify-center gap-3">
-            <div className="w-8 h-8 border-4 border-purple-500 border-t-transparent rounded-full animate-spin"></div>
-            <p className="text-sm">Cargando datos...</p>
-          </div>
-        ) : (
-          <>
-            {/* ALERTA STOCK CRÍTICO */}
-            {lowStockProducts.length > 0 && (
-              <div className="mb-6 bg-rose-950/40 border border-rose-500/50 rounded-2xl p-4 shadow-lg">
-                <div className="flex items-center gap-2 mb-2 text-rose-300 font-bold text-xs sm:text-sm">
-                  <span>⚠️</span>
-                  <span>ATENCIÓN: PRODUCTOS CON STOCK CRÍTICO (&le; 2 UNIDADES)</span>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                  {lowStockProducts.map((p) => (
-                    <div
-                      key={p.id}
-                      className="bg-[#121638] border border-rose-500/30 rounded-xl p-3 flex justify-between items-center"
-                    >
-                      <div>
-                        <p className="text-xs font-bold text-white line-clamp-1">{p.title}</p>
-                        <p className="text-[11px] text-slate-400">${Number(p.price).toLocaleString('es-CO')} COP</p>
-                      </div>
-                      <span className={`text-xs font-black px-2.5 py-1 rounded-lg ${
-                        p.stock === 0 ? 'bg-red-600 text-white' : 'bg-amber-500 text-black'
-                      }`}>
-                        {p.stock === 0 ? 'AGOTADO' : `${p.stock} restantes`}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* TAB DASHBOARD CON FILTROS TEMPORALES */}
-            {activeTab === 'dashboard' && (
-              <div className="space-y-6">
-                
-                {/* SELECTOR DE FILTRO DE FECHAS */}
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-[#0d122b] p-3.5 sm:p-4 rounded-2xl border border-purple-500/30">
-                  <div>
-                    <h3 className="text-sm font-bold text-white">Filtrar Métricas y Rendimiento</h3>
-                    <p className="text-xs text-slate-400">Selecciona el periodo que deseas analizar:</p>
-                  </div>
-
-                  <div className="flex gap-1.5 bg-[#141a38] p-1 rounded-xl border border-purple-500/30">
-                    <button
-                      onClick={() => setDateFilter('today')}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
-                        dateFilter === 'today' ? 'bg-purple-600 text-white' : 'text-slate-400 hover:text-white'
-                      }`}
-                    >
-                      Hoy
-                    </button>
-                    <button
-                      onClick={() => setDateFilter('week')}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
-                        dateFilter === 'week' ? 'bg-purple-600 text-white' : 'text-slate-400 hover:text-white'
-                      }`}
-                    >
-                      Esta Semana
-                    </button>
-                    <button
-                      onClick={() => setDateFilter('month')}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
-                        dateFilter === 'month' ? 'bg-purple-600 text-white' : 'text-slate-400 hover:text-white'
-                      }`}
-                    >
-                      Este Mes
-                    </button>
-                    <button
-                      onClick={() => setDateFilter('all')}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
-                        dateFilter === 'all' ? 'bg-purple-600 text-white' : 'text-slate-400 hover:text-white'
-                      }`}
-                    >
-                      Histórico Total
-                    </button>
-                  </div>
-                </div>
-
-                {/* TARJETAS DE MÉTRICAS */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                  <div className="bg-[#0d122b] border border-purple-500/30 rounded-2xl p-5 shadow-lg">
-                    <p className="text-xs text-slate-400 font-semibold mb-1">Total Recaudado (Ventas)</p>
-                    <p className="text-2xl font-black text-emerald-400">${totalRevenue.toLocaleString('es-CO')} COP</p>
-                    <p className="text-[11px] text-slate-500 mt-2">De {completedOrders.length} pedido(s) completado(s)</p>
-                  </div>
-
-                  <div className="bg-[#0d122b] border border-purple-500/30 rounded-2xl p-5 shadow-lg">
-                    <p className="text-xs text-slate-400 font-semibold mb-1">Pedidos Pendientes</p>
-                    <p className="text-2xl font-black text-amber-400">{pendingOrders.length}</p>
-                    <p className="text-[11px] text-slate-500 mt-2">En este periodo</p>
-                  </div>
-
-                  <div className="bg-[#0d122b] border border-purple-500/30 rounded-2xl p-5 shadow-lg">
-                    <p className="text-xs text-slate-400 font-semibold mb-1">Unidades Despachadas</p>
-                    <p className="text-2xl font-black text-purple-300">{totalUnitsSold}</p>
-                    <p className="text-[11px] text-slate-500 mt-2">Artículos vendidos en este periodo</p>
-                  </div>
-
-                  <div className="bg-[#0d122b] border border-purple-500/30 rounded-2xl p-5 shadow-lg">
-                    <p className="text-xs text-slate-400 font-semibold mb-1">Clientes Registrados</p>
-                    <p className="text-2xl font-black text-blue-400">{profiles.length}</p>
-                    <p className="text-[11px] text-slate-500 mt-2">Con consentimiento Habeas Data</p>
-                  </div>
-                </div>
-
-                {/* HISTORIAL RÁPIDO */}
-                <div className="bg-[#0d122b] border border-purple-500/25 rounded-2xl p-4 sm:p-6 shadow-xl">
-                  <h3 className="text-sm font-bold text-white mb-4 flex items-center justify-between">
-                    <span>Pedidos en el Periodo Seleccionado</span>
-                    <button onClick={() => setActiveTab('orders')} className="text-xs text-purple-400 hover:text-purple-300 underline cursor-pointer">
-                      Ver todos en Pedidos
-                    </button>
-                  </h3>
-                  {filteredOrders.length === 0 ? (
-                    <p className="text-xs text-slate-500 text-center py-6">No hay pedidos registrados en este rango de tiempo.</p>
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left text-xs">
-                        <thead className="text-slate-400 border-b border-purple-500/20">
-                          <tr>
-                            <th className="pb-3 font-semibold">Fecha</th>
-                            <th className="pb-3 font-semibold">Cliente</th>
-                            <th className="pb-3 font-semibold">Teléfono / Ciudad</th>
-                            <th className="pb-3 font-semibold">Total</th>
-                            <th className="pb-3 font-semibold">Entrega</th>
-                            <th className="pb-3 font-semibold">Estado</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-purple-500/10 text-slate-300">
-                          {filteredOrders.slice(0, 6).map((o) => (
-                            <tr key={o.id} className="hover:bg-white/5">
-                              <td className="py-3 text-slate-400">{new Date(o.created_at).toLocaleDateString('es-CO')}</td>
-                              <td className="py-3 font-medium text-white">{o.customer_name}</td>
-                              <td className="py-3">{o.customer_phone} • {o.customer_city}</td>
-                              <td className="py-3 font-bold text-purple-300">${Number(o.total).toLocaleString('es-CO')}</td>
-                              <td className="py-3 capitalize">{o.delivery_type === 'domicilio' ? 'Domicilio' : 'Recogida'}</td>
-                              <td className="py-3">
-                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                  o.status === 'completado'
-                                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                                    : o.status === 'cancelado'
-                                    ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                                    : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                                }`}>
-                                  {o.status.toUpperCase()}
-                                </span>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* TAB PEDIDOS DETALLADO */}
-            {activeTab === 'orders' && (
-              <div className="space-y-4">
-                <div className="flex justify-between items-center mb-2">
-                  <h3 className="text-sm font-bold text-white">Historial Completo de Pedidos</h3>
-                  <span className="text-xs text-slate-400">{orders.length} pedido(s) totales</span>
-                </div>
-
-                {orders.length === 0 ? (
-                  <div className="bg-[#0d122b] rounded-2xl p-10 text-center text-slate-500 border border-purple-500/20">
-                    No se han registrado pedidos aún.
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {orders.map((order) => (
-                      <div
-                        key={order.id}
-                        className="bg-[#0d122b] border border-purple-500/25 rounded-2xl p-4 sm:p-5 shadow-lg flex flex-col lg:flex-row justify-between gap-4 items-start lg:items-center"
-                      >
-                        <div className="space-y-1.5 flex-1">
-                          <div className="flex items-center gap-3 flex-wrap">
-                            <span className="text-base font-bold text-white">{order.customer_name}</span>
-                            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                              order.status === 'completado'
-                                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                                : order.status === 'cancelado'
-                                ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
-                                : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                            }`}>
-                              {order.status.toUpperCase()}
-                            </span>
-                            <span className="text-[11px] text-slate-400">
-                              {new Date(order.created_at).toLocaleString('es-CO')}
-                            </span>
-                          </div>
-
-                          <p className="text-xs text-slate-300">
-                            📱 <strong>Tel:</strong> {order.customer_phone} • 🏙️ <strong>Ciudad:</strong> {order.customer_city}
-                            {order.customer_address && ` • 📍 ${order.customer_address} (${order.customer_neighborhood || 'Sin barrio'})`}
-                          </p>
-
-                          <p className="text-xs text-slate-400">
-                            💳 <strong>Pago:</strong> {order.payment_method === 'transferencia' ? 'Transferencia (Nequi/Bancolombia)' : 'Efectivo contra entrega'}
-                            {' • '}🚚 <strong>Entrega:</strong> {order.delivery_type === 'domicilio' ? `Envío a domicilio ($${(order.delivery_cost || 15000).toLocaleString('es-CO')})` : 'Pasa a Recoger (Gratis)'}
-                            {order.notes && ` • 📝 ${order.notes}`}
-                          </p>
-
-                          <div className="pt-2 text-xs text-purple-200">
-                            <strong>Artículos:</strong>{' '}
-                            {Array.isArray(order.items) &&
-                              order.items.map((it, idx) => (
-                                <span key={idx} className="inline-block bg-[#141a38] px-2 py-0.5 rounded-md mr-1.5 border border-purple-500/20 text-[11px]">
-                                  {it.title} (x{it.quantity})
-                                </span>
-                              ))}
-                          </div>
-                        </div>
-
-                        <div className="flex flex-col items-end gap-3 w-full lg:w-auto border-t lg:border-t-0 pt-3 lg:pt-0 border-purple-500/20">
-                          <span className="text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-300">
-                            ${Number(order.total).toLocaleString('es-CO')} COP
-                          </span>
-
-                          {order.status === 'pendiente' && (
-                            <div className="flex gap-2">
-                              <button
-                                onClick={() => handleApproveOrderAndDeductStock(order)}
-                                disabled={updatingId === order.id}
-                                className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-3.5 py-2 rounded-xl transition shadow-md active:scale-95 disabled:opacity-50 cursor-pointer"
-                              >
-                                {updatingId === order.id ? 'Actualizando stock...' : '✓ Aprobar & Descontar Stock'}
-                              </button>
-                              <button
-                                onClick={() => handleCancelOrder(order.id)}
-                                disabled={updatingId === order.id}
-                                className="bg-rose-900/60 hover:bg-rose-800 text-rose-200 font-semibold text-xs px-3 py-2 rounded-xl transition border border-rose-700/50 cursor-pointer"
-                              >
-                                Cancelar
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* TAB INVENTARIO */}
-            {activeTab === 'inventory' && (
-              <div className="space-y-4">
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-2">
-                  <div>
-                    <h3 className="text-sm font-bold text-white">Control de Stock, Precios y Catálogo</h3>
-                    <p className="text-xs text-slate-400">{products.length} producto(s) en inventario</p>
-                  </div>
-                  
-                  <button
-                    onClick={() => { setShowAddModal(true); setCreateError(null); }}
-                    className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition shadow-lg shadow-purple-900/40 flex items-center gap-2 active:scale-95 cursor-pointer"
-                  >
-                    <span>➕</span>
-                    <span>Agregar Nuevo Producto</span>
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {products.map((prod) => (
-                    <div
-                      key={prod.id}
-                      className="bg-[#0d122b] border border-purple-500/25 rounded-2xl p-5 shadow-lg flex flex-col justify-between"
-                    >
-                      <div>
-                        <div className="flex items-center gap-3 mb-3">
-                          <img
-                            src={prod.image_url || (prod.images && prod.images[0]) || '/logo.png'}
-                            alt={prod.title}
-                            className="w-14 h-14 object-contain rounded-xl bg-slate-900 p-1 border border-purple-500/30"
-                          />
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <span className="text-[10px] bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded-full border border-purple-500/30">
-                                {prod.category || 'General'}
-                              </span>
-                              {prod.featured && (
-                                <span className="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded-full font-bold">
-                                  ⭐ En Banner
-                                </span>
-                              )}
-                            </div>
-                            <h4 className="text-sm font-bold text-white truncate mt-1">{prod.title}</h4>
-                            <p className="text-xs text-slate-400">
-                              {prod.images ? `${prod.images.length} fotos` : '1 foto'}
-                            </p>
-                          </div>
-                        </div>
-
-                        <p className="text-lg font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-300 mb-3">
-                          ${Number(prod.price).toLocaleString('es-CO')} COP
-                        </p>
-                      </div>
-
-                      <div className="space-y-3 pt-3 border-t border-purple-500/20">
-                        {/* Control de Stock */}
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs text-slate-300">Stock:</span>
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => handleUpdateStock(prod.id, prod.stock - 1)}
-                              className="w-7 h-7 bg-[#141a38] hover:bg-purple-600 rounded-lg text-xs font-bold text-white flex items-center justify-center border border-purple-500/30 cursor-pointer"
-                            >
-                              -
-                            </button>
-                            <input
-                              type="number"
-                              value={prod.stock}
-                              onChange={(e) => handleUpdateStock(prod.id, parseInt(e.target.value) || 0)}
-                              className="w-14 bg-[#141a38] border border-purple-500/40 rounded-lg py-1 text-center text-xs font-bold text-white focus:outline-none"
-                            />
-                            <button
-                              onClick={() => handleUpdateStock(prod.id, prod.stock + 1)}
-                              className="w-7 h-7 bg-[#141a38] hover:bg-purple-600 rounded-lg text-xs font-bold text-white flex items-center justify-center border border-purple-500/30 cursor-pointer"
-                            >
-                              +
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Botón rápido Banner */}
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs text-slate-300">Promocionar en Banner:</span>
-                          <button
-                            type="button"
-                            onClick={() => handleToggleProductFeatured(prod.id, Boolean(prod.featured))}
-                            className={`px-3 py-1 rounded-full text-[11px] font-bold transition cursor-pointer ${
-                              prod.featured
-                                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                                : 'bg-slate-800 text-slate-400 border border-slate-700'
-                            }`}
-                          >
-                            {prod.featured ? '⭐ Sí (Destacado)' : '✕ No'}
-                          </button>
-                        </div>
-
-                        {/* Acciones */}
-                        <div className="flex items-center justify-between pt-1 gap-2">
-                          <button
-                            onClick={() => startEditProduct(prod)}
-                            className="bg-blue-600/30 hover:bg-blue-600/60 text-blue-200 border border-blue-500/40 px-3 py-1.5 rounded-xl text-xs font-semibold transition flex items-center gap-1 cursor-pointer"
-                          >
-                            <span>✏️</span>
-                            <span>Editar</span>
-                          </button>
-
-                          <button
-                            onClick={() => handleToggleProductActive(prod.id, prod.active !== false)}
-                            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer ${
-                              prod.active !== false
-                                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                                : 'bg-slate-800 text-slate-400 border border-slate-700'
-                            }`}
-                          >
-                            {prod.active !== false ? '✓ Activo' : '✕ Oculto'}
-                          </button>
-
-                          <button
-                            onClick={() => handleDeleteProduct(prod.id, prod.title)}
-                            className="text-xs text-red-400 hover:text-red-300 bg-red-950/30 hover:bg-red-900/50 border border-red-500/30 px-3 py-1.5 rounded-xl transition flex items-center gap-1 cursor-pointer"
-                            title="Eliminar producto"
-                          >
-                            <span>🗑️</span>
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* TAB CLIENTES */}
-            {activeTab === 'customers' && (
-              <div className="space-y-4">
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-2">
-                  <div>
-                    <h3 className="text-sm font-bold text-white">Base de Clientes Registrados</h3>
-                    <p className="text-xs text-slate-400">Usuarios con consentimiento Habeas Data (Ley 1581 de 2012).</p>
-                  </div>
-                  <button
-                    onClick={handleCopyEmails}
-                    className="bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs px-4 py-2 rounded-xl transition shadow-md flex items-center gap-2 cursor-pointer"
-                  >
-                    <span>📋</span>
-                    <span>{copiedEmails ? '¡Correos copiados!' : 'Copiar todos los correos'}</span>
-                  </button>
-                </div>
-
-                <div className="bg-[#0d122b] border border-purple-500/25 rounded-2xl overflow-hidden shadow-xl">
-                  {profiles.length === 0 ? (
-                    <div className="p-8 text-center text-slate-500 text-xs">
-                      Aún no hay clientes registrados en la base de datos.
-                    </div>
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left text-xs">
-                        <thead className="text-slate-400 bg-[#090c1f] border-b border-purple-500/20">
-                          <tr>
-                            <th className="py-3 px-4 font-semibold">Nombre Completo</th>
-                            <th className="py-3 px-4 font-semibold">Correo Electrónico</th>
-                            <th className="py-3 px-4 font-semibold">Teléfono / WhatsApp</th>
-                            <th className="py-3 px-4 font-semibold">Habeas Data</th>
-                            <th className="py-3 px-4 font-semibold">Fecha Registro</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-purple-500/10 text-slate-300">
-                          {profiles.map((prof) => (
-                            <tr key={prof.id} className="hover:bg-white/5">
-                              <td className="py-3 px-4 font-bold text-white">{prof.full_name}</td>
-                              <td className="py-3 px-4 text-purple-300 font-medium">{prof.email}</td>
-                              <td className="py-3 px-4">{prof.phone || 'No registrado'}</td>
-                              <td className="py-3 px-4">
-                                <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2 py-0.5 rounded-full text-[10px] font-bold">
-                                  ✓ Autorizado
-                                </span>
-                              </td>
-                              <td className="py-3 px-4 text-slate-500">
-                                {new Date(prof.created_at).toLocaleDateString('es-CO')}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-          </>
-        )}
-      </main>
-
-      {/* MODAL EDITAR PRODUCTO */}
-      {editingProduct && (
-        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-[#0d122b] border border-purple-500/40 rounded-3xl max-w-2xl w-full p-6 sm:p-8 relative shadow-2xl my-8 max-h-[92vh] flex flex-col">
-            <button
-              onClick={() => setEditingProduct(null)}
-              className="absolute top-5 right-5 text-slate-400 hover:text-white text-lg cursor-pointer"
-            >
-              ✕
-            </button>
-
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-2xl">✏️</span>
-              <h3 className="text-lg font-bold text-white">Editar Producto y Galería</h3>
-            </div>
-            <p className="text-xs text-slate-400 mb-4">
-              Modifica precios, descripciones y acomoda el orden de las fotos.
-            </p>
-
-            {editError && (
-              <div className="bg-red-500/20 border border-red-500/40 text-red-300 text-xs p-3 rounded-xl mb-4 font-semibold">
-                {editError}
-              </div>
-            )}
-
-            <form onSubmit={handleSaveEditProduct} className="space-y-4 text-xs overflow-y-auto pr-1 flex-1">
-              <div>
-                <label className="block text-slate-300 font-semibold mb-1">Título del Producto *</label>
-                <input
-                  type="text"
-                  required
-                  value={editTitle}
-                  onChange={(e) => setEditTitle(e.target.value)}
-                  className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:border-purple-400 text-sm"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-slate-300 font-semibold mb-1">Categoría</label>
-                  <select
-                    value={editCategory}
-                    onChange={(e) => setEditCategory(e.target.value)}
-                    className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-purple-400 text-xs cursor-pointer"
-                  >
-                    <option value="Tecnología">Tecnología</option>
-                    <option value="Motos">Motos</option>
-                    <option value="Hogar">Hogar</option>
-                    <option value="Accesorios">Accesorios</option>
-                    <option value="Iluminación">Iluminación</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-slate-300 font-semibold mb-1">Precio Actual (COP) *</label>
-                  <input
-                    type="number"
-                    required
-                    value={editPrice}
-                    onChange={(e) => setEditPrice(e.target.value === '' ? '' : Number(e.target.value))}
-                    className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-purple-400 text-xs font-bold text-emerald-400"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-slate-300 font-semibold mb-1">Stock de Unidades *</label>
-                  <input
-                    type="number"
-                    required
-                    value={editStock}
-                    onChange={(e) => setEditStock(e.target.value === '' ? '' : Number(e.target.value))}
-                    className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-purple-400 text-xs font-bold"
-                  />
-                </div>
-              </div>
-
-              <div className="bg-[#141a38] border border-purple-500/30 rounded-xl p-3 flex items-center justify-between">
-                <div>
-                  <p className="text-white font-bold text-xs">⭐ Promocionar en Banner Rotativo de la Tienda</p>
-                  <p className="text-[11px] text-slate-400">El producto aparecerá como una diapositiva destacada principal.</p>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={editFeatured}
-                  onChange={(e) => setEditFeatured(e.target.checked)}
-                  className="w-5 h-5 rounded border-purple-500 text-purple-600 focus:ring-purple-500 cursor-pointer"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-300 font-semibold mb-1">Descripción Breve (Catálogo)</label>
-                <textarea
-                  rows={2}
-                  value={editDescription}
-                  onChange={(e) => setEditDescription(e.target.value)}
-                  className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3.5 py-2 text-white focus:outline-none focus:border-purple-400 text-xs"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-300 font-semibold mb-1">Descripción Detallada (Ventana modal)</label>
-                <textarea
-                  rows={4}
-                  value={editFullDescription}
-                  onChange={(e) => setEditFullDescription(e.target.value)}
-                  className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3.5 py-2 text-white focus:outline-none focus:border-purple-400 text-xs"
-                />
-              </div>
-
-              <div className="bg-[#141a38] border border-purple-500/30 rounded-2xl p-4">
-                <div className="flex justify-between items-center mb-2">
-                  <div>
-                    <label className="block text-white font-bold text-xs">
-                      🖼️ Organizador de Galería e Imagen de Portada
-                    </label>
-                    <p className="text-[11px] text-slate-400">
-                      La <strong>Foto #1</strong> es la portada. Usa ◀ y ▶ para reordenar.
-                    </p>
-                  </div>
-                  <span className="text-xs text-purple-300 font-semibold">{editImages.length} fotos</span>
-                </div>
-
-                {editImages.length === 0 ? (
-                  <p className="text-xs text-amber-300 py-3">Este producto no tiene fotos cargadas actualmente.</p>
-                ) : (
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 my-3">
-                    {editImages.map((imgUrl, idx) => (
-                      <div
-                        key={idx}
-                        className={`relative rounded-xl overflow-hidden border-2 p-1 bg-[#0b0e24] flex flex-col items-center ${
-                          idx === 0 ? 'border-emerald-400 shadow-md shadow-emerald-500/20' : 'border-purple-500/30'
-                        }`}
-                      >
-                        <span className={`absolute top-2 left-2 text-[10px] font-black px-1.5 py-0.5 rounded-md z-10 ${
-                          idx === 0 ? 'bg-emerald-500 text-black' : 'bg-black/70 text-white'
-                        }`}>
-                          {idx === 0 ? '★ Portada' : `#${idx + 1}`}
-                        </span>
-
-                        <div className="w-full h-24 rounded-lg overflow-hidden bg-slate-900 mb-2 mt-4 p-1 flex items-center justify-center">
-                          <img src={imgUrl} alt={`Foto ${idx}`} className="w-full h-full object-contain" />
-                        </div>
-
-                        <div className="flex items-center justify-between w-full px-1">
-                          <button
-                            type="button"
-                            disabled={idx === 0}
-                            onClick={() => moveImageLeft(idx)}
-                            className="w-6 h-6 bg-[#1f2652] hover:bg-purple-600 disabled:opacity-30 rounded text-[11px] font-bold text-white flex items-center justify-center cursor-pointer"
-                            title="Mover antes"
-                          >
-                            ◀
-                          </button>
-                          
-                          <button
-                            type="button"
-                            onClick={() => removeImageAt(idx)}
-                            className="text-red-400 hover:text-red-300 text-xs p-1 cursor-pointer"
-                            title="Quitar foto"
-                          >
-                            ✕
-                          </button>
-
-                          <button
-                            type="button"
-                            disabled={idx === editImages.length - 1}
-                            onClick={() => moveImageRight(idx)}
-                            className="w-6 h-6 bg-[#1f2652] hover:bg-purple-600 disabled:opacity-30 rounded text-[11px] font-bold text-white flex items-center justify-center cursor-pointer"
-                            title="Mover después"
-                          >
-                            ▶
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                <div className="mt-3 pt-3 border-t border-purple-500/20">
-                  <label className="block text-slate-300 font-semibold mb-1">
-                    ➕ Añadir más fotos al producto
-                  </label>
-                  <input
-                    type="file"
-                    multiple
-                    accept="image/*"
-                    onChange={(e) => {
-                      if (e.target.files) {
-                        setEditNewFiles(Array.from(e.target.files));
-                      }
-                    }}
-                    className="w-full text-xs text-slate-400 file:mr-4 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-purple-600/30 file:text-purple-200 hover:file:bg-purple-600/50 cursor-pointer bg-[#0b0e24] p-2 rounded-xl border border-purple-500/30"
-                  />
-                </div>
-              </div>
-
-              <div className="pt-2">
-                <button
-                  type="submit"
-                  disabled={isUpdating}
-                  className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-bold py-3.5 rounded-xl transition shadow-lg shadow-purple-900/40 text-sm active:scale-95 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
-                >
-                  {isUpdating ? 'Guardando cambios...' : 'Guardar Cambios del Producto'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL CREAR PRODUCTO */}
-      {showAddModal && (
-        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-[#0d122b] border border-purple-500/40 rounded-3xl max-w-xl w-full p-6 sm:p-8 relative shadow-2xl my-8 max-h-[90vh] flex flex-col">
-            <button
-              onClick={() => setShowAddModal(false)}
-              className="absolute top-5 right-5 text-slate-400 hover:text-white text-lg cursor-pointer"
-            >
-              ✕
-            </button>
-
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-2xl">📦</span>
-              <h3 className="text-lg font-bold text-white">Agregar Nuevo Producto</h3>
-            </div>
-            <p className="text-xs text-slate-400 mb-4">
-              Completa los datos del producto y sube sus fotos para publicarlo.
-            </p>
-
-            {createError && (
-              <div className="bg-red-500/20 border border-red-500/40 text-red-300 text-xs p-3 rounded-xl mb-4 font-semibold">
-                {createError}
-              </div>
-            )}
-
-            <form onSubmit={handleCreateProduct} className="space-y-4 text-xs overflow-y-auto pr-1 flex-1">
-              <div>
-                <label className="block text-slate-300 font-semibold mb-1">Título del Producto *</label>
-                <input
-                  type="text"
-                  required
-                  value={createTitle}
-                  onChange={(e) => setCreateTitle(e.target.value)}
-                  placeholder="Ej. Intercomunicador Casco Bluetooth Pro"
-                  className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:border-purple-400 text-sm"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-slate-300 font-semibold mb-1">Categoría</label>
-                  <select
-                    value={createCategory}
-                    onChange={(e) => setCreateCategory(e.target.value)}
-                    className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-purple-400 text-xs cursor-pointer"
-                  >
-                    <option value="Tecnología">Tecnología</option>
-                    <option value="Motos">Motos</option>
-                    <option value="Hogar">Hogar</option>
-                    <option value="Accesorios">Accesorios</option>
-                    <option value="Iluminación">Iluminación</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-slate-300 font-semibold mb-1">Precio (COP) *</label>
-                  <input
-                    type="number"
-                    required
-                    value={createPrice}
-                    onChange={(e) => setCreatePrice(e.target.value === '' ? '' : Number(e.target.value))}
-                    placeholder="Ej. 165000"
-                    className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-purple-400 text-xs font-bold text-emerald-400"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-slate-300 font-semibold mb-1">Stock Inicial *</label>
-                  <input
-                    type="number"
-                    required
-                    value={createStock}
-                    onChange={(e) => setCreateStock(e.target.value === '' ? '' : Number(e.target.value))}
-                    placeholder="Ej. 10"
-                    className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-purple-400 text-xs font-bold"
-                  />
-                </div>
-              </div>
-
-              <div className="bg-[#141a38] border border-purple-500/30 rounded-xl p-3 flex items-center justify-between">
-                <div>
-                  <p className="text-white font-bold text-xs">⭐ Promocionar en Banner Rotativo</p>
-                  <p className="text-[11px] text-slate-400">Mostrar este producto en el carrusel de inicio.</p>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={createFeatured}
-                  onChange={(e) => setCreateFeatured(e.target.checked)}
-                  className="w-5 h-5 rounded border-purple-500 text-purple-600 focus:ring-purple-500 cursor-pointer"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-300 font-semibold mb-1">Descripción Breve (Catálogo)</label>
-                <textarea
-                  rows={2}
-                  value={createDescription}
-                  onChange={(e) => setCreateDescription(e.target.value)}
-                  placeholder="Resumen de 1 o 2 líneas..."
-                  className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3.5 py-2 text-white focus:outline-none focus:border-purple-400 text-xs"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-300 font-semibold mb-1">Descripción Detallada (Ventana modal)</label>
-                <textarea
-                  rows={4}
-                  value={createFullDescription}
-                  onChange={(e) => setCreateFullDescription(e.target.value)}
-                  placeholder="Especificaciones completas..."
-                  className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3.5 py-2 text-white focus:outline-none focus:border-purple-400 text-xs"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-300 font-semibold mb-1">
-                  Fotos del Producto (hasta 4 imágenes)
-                </label>
-                <input
-                  type="file"
-                  multiple
-                  accept="image/*"
-                  onChange={(e) => {
-                    if (e.target.files) {
-                      setCreateFiles(Array.from(e.target.files).slice(0, 4));
-                    }
-                  }}
-                  className="w-full text-xs text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-purple-600/30 file:text-purple-200 hover:file:bg-purple-600/50 cursor-pointer bg-[#141a38] p-2 rounded-xl border border-purple-500/30"
-                />
-              </div>
-
-              <div className="pt-2">
-                <button
-                  type="submit"
-                  disabled={isCreating}
-                  className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-bold py-3.5 rounded-xl transition shadow-lg shadow-purple-900/40 text-sm active:scale-95 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
-                >
-                  {isCreating ? 'Guardando y publicando...' : 'Guardar y Publicar Producto'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
