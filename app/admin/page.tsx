@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
 import { supabase } from '../lib/supabase';
 
@@ -23,6 +23,8 @@ interface Order {
   payment_method: string;
   notes?: string;
   items: OrderItem[];
+  subtotal?: number;
+  delivery_cost?: number;
   total: number;
   status: 'pendiente' | 'completado' | 'cancelado';
 }
@@ -50,6 +52,8 @@ interface Profile {
   accepted_terms: boolean;
 }
 
+type PeriodFilter = 'today' | 'week' | 'month' | 'year' | 'all';
+
 export default function AdminDashboard() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [authChecking, setAuthChecking] = useState<boolean>(true);
@@ -58,7 +62,9 @@ export default function AdminDashboard() {
   const [loginError, setLoginError] = useState<string | null>(null);
   const [isLoggingIn, setIsLoggingIn] = useState<boolean>(false);
 
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'orders' | 'inventory' | 'customers'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'analytics' | 'orders' | 'inventory' | 'customers'>('analytics');
+  const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('month');
+
   const [orders, setOrders] = useState<Order[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -79,7 +85,7 @@ export default function AdminDashboard() {
   const [isCreating, setIsCreating] = useState<boolean>(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
-  // Estados: Editar Producto
+  // Estados: Editar Producto y Reorganizar Imágenes
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [editCategory, setEditCategory] = useState('Tecnología');
@@ -165,10 +171,50 @@ export default function AdminDashboard() {
     }
   }, [isAuthenticated]);
 
-  const handleUpdateOrderStatus = async (orderId: string, newStatus: 'completado' | 'cancelado') => {
+  // APROBAR PEDIDO Y DESCONTAR STOCK AUTOMÁTICAMENTE
+  const handleApproveOrderAndDeductStock = async (order: Order) => {
+    setUpdatingId(order.id);
+    try {
+      if (Array.isArray(order.items)) {
+        for (const item of order.items) {
+          const currentProd = products.find((p) => String(p.id) === String(item.id));
+          if (currentProd) {
+            const updatedStock = Math.max(0, Number(currentProd.stock) - Number(item.quantity));
+            await supabase
+              .from('products')
+              .update({ stock: updatedStock })
+              .eq('id', item.id);
+          }
+        }
+      }
+
+      const { error } = await supabase
+        .from('orders')
+        .update({ status: 'completado' })
+        .eq('id', order.id);
+
+      if (error) {
+        alert('Error al aprobar: ' + error.message);
+      } else {
+        alert('✓ Pedido aprobado y stock descontado exitosamente.');
+        await fetchData();
+      }
+    } catch (err: any) {
+      alert('Error: ' + err?.message);
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  const handleCancelOrder = async (orderId: string) => {
+    if (!window.confirm('¿Seguro que deseas cancelar este pedido?')) return;
     setUpdatingId(orderId);
     try {
-      const { error } = await supabase.from('orders').update({ status: newStatus }).eq('id', orderId);
+      const { error } = await supabase
+        .from('orders')
+        .update({ status: 'cancelado' })
+        .eq('id', orderId);
+
       if (error) alert('Error: ' + error.message);
       else await fetchData();
     } catch (err: any) {
@@ -190,7 +236,6 @@ export default function AdminDashboard() {
     }
   };
 
-  // Alternar Destacado en Banner
   const handleToggleProductFeatured = async (productId: string, currentFeatured: boolean) => {
     try {
       const { error } = await supabase.from('products').update({ featured: !currentFeatured }).eq('id', productId);
@@ -294,6 +339,7 @@ export default function AdminDashboard() {
     }
   };
 
+  // INICIAR EDICIÓN: EXTRAE Y NORMALIZA ABSOLUTAMENTE TODAS LAS IMÁGENES
   const startEditProduct = (prod: Product) => {
     setEditingProduct(prod);
     setEditTitle(prod.title);
@@ -304,10 +350,20 @@ export default function AdminDashboard() {
     setEditFullDescription(prod.full_description || prod.description || '');
     setEditFeatured(Boolean(prod.featured));
     
-    const existingImgs = prod.images && prod.images.length > 0
-      ? prod.images
-      : (prod.image_url ? [prod.image_url] : []);
-    setEditImages([...existingImgs]);
+    // Recopilar todas las imágenes existentes sin perder ninguna
+    const allImgs: string[] = [];
+    if (prod.image_url && typeof prod.image_url === 'string') {
+      allImgs.push(prod.image_url);
+    }
+    if (Array.isArray(prod.images)) {
+      prod.images.forEach((img) => {
+        if (img && typeof img === 'string' && !allImgs.includes(img)) {
+          allImgs.push(img);
+        }
+      });
+    }
+
+    setEditImages(allImgs.length > 0 ? allImgs : ['/logo.png']);
     setEditNewFiles([]);
     setEditError(null);
   };
@@ -335,6 +391,10 @@ export default function AdminDashboard() {
   };
 
   const removeImageAt = (index: number) => {
+    if (editImages.length <= 1) {
+      alert('El producto debe conservar al menos una imagen.');
+      return;
+    }
     setEditImages((prev) => prev.filter((_, i) => i !== index));
   };
 
@@ -369,7 +429,7 @@ export default function AdminDashboard() {
           full_description: editFullDescription || editDescription,
           featured: editFeatured,
           image_url: finalMainImage,
-          images: finalImages.length > 0 ? finalImages : [finalMainImage],
+          images: finalImages,
         })
         .eq('id', editingProduct.id)
         .select();
@@ -383,7 +443,7 @@ export default function AdminDashboard() {
           );
         }
         setEditingProduct(null);
-        alert('¡Producto y cambios en el banner guardados exitosamente!');
+        alert('¡Producto y orden de imágenes guardados exitosamente!');
       }
     } catch (err: any) {
       setEditError(err?.message || 'Error guardando cambios');
@@ -398,6 +458,86 @@ export default function AdminDashboard() {
     setCopiedEmails(true);
     setTimeout(() => setCopiedEmails(false), 2500);
   };
+
+  // LÓGICA DE FILTRADO POR FECHA (DÍA, SEMANA, MES, AÑO, TOTAL)
+  const filteredOrders = useMemo(() => {
+    if (periodFilter === 'all') return orders;
+    const now = new Date();
+
+    return orders.filter((o) => {
+      const orderDate = new Date(o.created_at);
+
+      if (periodFilter === 'today') {
+        return (
+          orderDate.getFullYear() === now.getFullYear() &&
+          orderDate.getMonth() === now.getMonth() &&
+          orderDate.getDate() === now.getDate()
+        );
+      }
+
+      if (periodFilter === 'week') {
+        const diffTime = now.getTime() - orderDate.getTime();
+        const diffDays = diffTime / (1000 * 3600 * 24);
+        return diffDays >= 0 && diffDays <= 7;
+      }
+
+      if (periodFilter === 'month') {
+        return (
+          orderDate.getFullYear() === now.getFullYear() &&
+          orderDate.getMonth() === now.getMonth()
+        );
+      }
+
+      if (periodFilter === 'year') {
+        return orderDate.getFullYear() === now.getFullYear();
+      }
+
+      return true;
+    });
+  }, [orders, periodFilter]);
+
+  // CÁLCULOS DE ESTADÍSTICAS DEL PERIODO FILTRADO
+  const completedOrders = useMemo(() => filteredOrders.filter((o) => o.status === 'completado'), [filteredOrders]);
+  const pendingOrders = useMemo(() => filteredOrders.filter((o) => o.status === 'pendiente'), [filteredOrders]);
+  const cancelledOrders = useMemo(() => filteredOrders.filter((o) => o.status === 'cancelado'), [filteredOrders]);
+
+  const totalRevenue = useMemo(() => {
+    return completedOrders.reduce((acc, o) => acc + Number(o.total || 0), 0);
+  }, [completedOrders]);
+
+  const pendingRevenue = useMemo(() => {
+    return pendingOrders.reduce((acc, o) => acc + Number(o.total || 0), 0);
+  }, [pendingOrders]);
+
+  const totalShippingRevenue = useMemo(() => {
+    return completedOrders.reduce((acc, o) => acc + Number(o.delivery_cost || 0), 0);
+  }, [completedOrders]);
+
+  const totalUnitsSold = useMemo(() => {
+    return completedOrders.reduce((acc, o) => {
+      if (!Array.isArray(o.items)) return acc;
+      return acc + o.items.reduce((sum, item) => sum + (item.quantity || 0), 0);
+    }, 0);
+  }, [completedOrders]);
+
+  // RANKING DE PRODUCTOS MÁS VENDIDOS EN EL PERIODO
+  const topProducts = useMemo(() => {
+    const map: { [key: string]: { title: string; count: number; revenue: number } } = {};
+    completedOrders.forEach((o) => {
+      if (Array.isArray(o.items)) {
+        o.items.forEach((it) => {
+          if (!map[it.id]) {
+            map[it.id] = { title: it.title, count: 0, revenue: 0 };
+          }
+          map[it.id].count += it.quantity || 0;
+          map[it.id].revenue += (it.price || 0) * (it.quantity || 0);
+        });
+      }
+    });
+    return Object.values(map).sort((a, b) => b.count - a.count);
+  }, [completedOrders]);
+
+  const lowStockProducts = products.filter((p) => Number(p.stock) <= 2);
 
   if (authChecking) {
     return (
@@ -469,78 +609,70 @@ export default function AdminDashboard() {
     );
   }
 
-  const completedOrders = orders.filter((o) => o.status === 'completado');
-  const pendingOrders = orders.filter((o) => o.status === 'pendiente');
-  const totalRevenue = completedOrders.reduce((acc, o) => acc + Number(o.total || 0), 0);
-  const totalUnitsSold = completedOrders.reduce((acc, o) => {
-    if (!Array.isArray(o.items)) return acc;
-    return acc + o.items.reduce((sum, item) => sum + (item.quantity || 0), 0);
-  }, 0);
-  const lowStockProducts = products.filter((p) => Number(p.stock) <= 2);
-
   return (
     <div className="min-h-screen bg-[#060814] text-slate-100 flex flex-col font-sans">
-      <header className="sticky top-0 z-30 bg-[#0d122b]/90 backdrop-blur-md border-b border-purple-500/20 px-6 py-4 flex items-center justify-between">
+      <header className="sticky top-0 z-30 bg-[#0d122b]/90 backdrop-blur-md border-b border-purple-500/20 px-4 sm:px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <span className="text-xl">⚙️</span>
           <div>
-            <h1 className="text-base font-bold text-white leading-tight">Panel de Administración</h1>
-            <p className="text-[11px] text-purple-300">Sesión Administrativa Activa</p>
+            <h1 className="text-sm sm:text-base font-bold text-white leading-tight">Panel de Control & Estadísticas</h1>
+            <p className="text-[10px] sm:text-[11px] text-purple-300">Sesión Administrativa Activa</p>
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
           <button
             onClick={fetchData}
-            className="text-xs bg-[#141a38] hover:bg-[#1f2652] text-slate-200 border border-purple-500/30 px-3 py-1.5 rounded-lg transition cursor-pointer"
+            className="text-xs bg-[#141a38] hover:bg-[#1f2652] text-slate-200 border border-purple-500/30 px-2.5 sm:px-3 py-1.5 rounded-lg transition cursor-pointer"
           >
             🔄 Actualizar
           </button>
           <Link
             href="/"
-            className="text-xs bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 border border-purple-500/40 px-3 py-1.5 rounded-lg transition"
+            className="text-xs bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 border border-purple-500/40 px-2.5 sm:px-3 py-1.5 rounded-lg transition"
           >
             🏪 Ver Tienda
           </Link>
           <button
             onClick={handleLogout}
-            className="text-xs bg-rose-900/40 hover:bg-rose-900/70 text-rose-200 border border-rose-700/40 px-3 py-1.5 rounded-lg transition cursor-pointer"
+            className="text-xs bg-rose-900/40 hover:bg-rose-900/70 text-rose-200 border border-rose-700/40 px-2.5 sm:px-3 py-1.5 rounded-lg transition cursor-pointer"
           >
             Cerrar Sesión
           </button>
         </div>
       </header>
 
-      <div className="bg-[#0b0e24] border-b border-purple-500/20 px-6">
-        <div className="max-w-7xl mx-auto flex gap-2 overflow-x-auto py-2.5">
+      {/* PESTAÑAS PRINCIPALES */}
+      <div className="bg-[#0b0e24] border-b border-purple-500/20 px-4 sm:px-6">
+        <div className="max-w-7xl mx-auto flex gap-2 overflow-x-auto py-2.5 scrollbar-none">
           <button
-            onClick={() => setActiveTab('dashboard')}
-            className={`px-4 py-2 rounded-xl text-xs font-semibold transition cursor-pointer ${
-              activeTab === 'dashboard'
+            onClick={() => setActiveTab('analytics')}
+            className={`px-4 py-2 rounded-xl text-xs font-semibold transition cursor-pointer shrink-0 ${
+              activeTab === 'analytics'
                 ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-md'
                 : 'text-slate-400 hover:text-white hover:bg-white/5'
             }`}
           >
-            📊 Resumen & Métricas
+            📊 Estadísticas & Ventas
           </button>
           <button
             onClick={() => setActiveTab('orders')}
-            className={`relative px-4 py-2 rounded-xl text-xs font-semibold transition cursor-pointer ${
+            className={`relative px-4 py-2 rounded-xl text-xs font-semibold transition cursor-pointer shrink-0 ${
               activeTab === 'orders'
                 ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-md'
                 : 'text-slate-400 hover:text-white hover:bg-white/5'
             }`}
           >
-            📦 Pedidos
-            {pendingOrders.length > 0 && (
+            📦 Historial de Pedidos
+            {orders.filter((o) => o.status === 'pendiente').length > 0 && (
               <span className="ml-2 bg-amber-500 text-black font-black text-[10px] px-1.5 py-0.2 rounded-full">
-                {pendingOrders.length}
+                {orders.filter((o) => o.status === 'pendiente').length}
               </span>
             )}
           </button>
           <button
             onClick={() => setActiveTab('inventory')}
-            className={`relative px-4 py-2 rounded-xl text-xs font-semibold transition cursor-pointer ${
+            className={`relative px-4 py-2 rounded-xl text-xs font-semibold transition cursor-pointer shrink-0 ${
               activeTab === 'inventory'
                 ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-md'
                 : 'text-slate-400 hover:text-white hover:bg-white/5'
@@ -555,7 +687,7 @@ export default function AdminDashboard() {
           </button>
           <button
             onClick={() => setActiveTab('customers')}
-            className={`px-4 py-2 rounded-xl text-xs font-semibold transition cursor-pointer ${
+            className={`px-4 py-2 rounded-xl text-xs font-semibold transition cursor-pointer shrink-0 ${
               activeTab === 'customers'
                 ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-md'
                 : 'text-slate-400 hover:text-white hover:bg-white/5'
@@ -566,7 +698,7 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      <main className="max-w-7xl mx-auto w-full p-6 flex-1">
+      <main className="max-w-7xl mx-auto w-full p-4 sm:p-6 flex-1">
         {loading ? (
           <div className="py-20 text-center text-slate-400 flex flex-col items-center justify-center gap-3">
             <div className="w-8 h-8 border-4 border-purple-500 border-t-transparent rounded-full animate-spin"></div>
@@ -574,11 +706,12 @@ export default function AdminDashboard() {
           </div>
         ) : (
           <>
+            {/* ALERTA DE STOCK CRÍTICO */}
             {lowStockProducts.length > 0 && (
               <div className="mb-6 bg-rose-950/40 border border-rose-500/50 rounded-2xl p-4 shadow-lg">
-                <div className="flex items-center gap-2 mb-2 text-rose-300 font-bold text-sm">
+                <div className="flex items-center gap-2 mb-2 text-rose-300 font-bold text-xs sm:text-sm">
                   <span>⚠️</span>
-                  <span>ATENCIÓN: PRODUCTOS CON STOCK CRÍTICO (&le; 2 UNIDADES)</span>
+                  <span>PRODUCTOS CON STOCK CRÍTICO (&le; 2 UNIDADES):</span>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                   {lowStockProducts.map((p) => (
@@ -587,7 +720,7 @@ export default function AdminDashboard() {
                       className="bg-[#121638] border border-rose-500/30 rounded-xl p-3 flex justify-between items-center"
                     >
                       <div>
-                        <p className="text-xs font-bold text-white">{p.title}</p>
+                        <p className="text-xs font-bold text-white line-clamp-1">{p.title}</p>
                         <p className="text-[11px] text-slate-400">${Number(p.price).toLocaleString('es-CO')} COP</p>
                       </div>
                       <span className={`text-xs font-black px-2.5 py-1 rounded-lg ${
@@ -601,64 +734,209 @@ export default function AdminDashboard() {
               </div>
             )}
 
-            {/* TAB DASHBOARD */}
-            {activeTab === 'dashboard' && (
+            {/* TAB ESTADÍSTICAS & VENTAS CON FILTRO POR PERIODO */}
+            {activeTab === 'analytics' && (
               <div className="space-y-6">
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                  <div className="bg-[#0d122b] border border-purple-500/30 rounded-2xl p-5 shadow-lg">
-                    <p className="text-xs text-slate-400 font-semibold mb-1">Total Recaudado (Ventas)</p>
-                    <p className="text-2xl font-black text-emerald-400">${totalRevenue.toLocaleString('es-CO')} COP</p>
-                    <p className="text-[11px] text-slate-500 mt-2">De {completedOrders.length} pedido(s) completado(s)</p>
+                
+                {/* BARRA DE FILTROS TEMPORALES */}
+                <div className="bg-[#0d122b] border border-purple-500/30 rounded-2xl p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shadow-xl">
+                  <div>
+                    <h2 className="text-base font-bold text-white flex items-center gap-2">
+                      <span>📈</span> Rendimiento Comercial
+                    </h2>
+                    <p className="text-xs text-slate-400">
+                      Filtra ingresos, artículos vendidos y órdenes por periodo de tiempo:
+                    </p>
                   </div>
 
-                  <div className="bg-[#0d122b] border border-purple-500/30 rounded-2xl p-5 shadow-lg">
-                    <p className="text-xs text-slate-400 font-semibold mb-1">Pedidos Pendientes</p>
-                    <p className="text-2xl font-black text-amber-400">{pendingOrders.length}</p>
-                    <p className="text-[11px] text-slate-500 mt-2">Requieren verificación de pago</p>
-                  </div>
-
-                  <div className="bg-[#0d122b] border border-purple-500/30 rounded-2xl p-5 shadow-lg">
-                    <p className="text-xs text-slate-400 font-semibold mb-1">Unidades Despachadas</p>
-                    <p className="text-2xl font-black text-purple-300">{totalUnitsSold}</p>
-                    <p className="text-[11px] text-slate-500 mt-2">Artículos vendidos exitosamente</p>
-                  </div>
-
-                  <div className="bg-[#0d122b] border border-purple-500/30 rounded-2xl p-5 shadow-lg">
-                    <p className="text-xs text-slate-400 font-semibold mb-1">Clientes Registrados</p>
-                    <p className="text-2xl font-black text-blue-400">{profiles.length}</p>
-                    <p className="text-[11px] text-slate-500 mt-2">Con consentimiento Habeas Data</p>
+                  {/* SELECTOR DE DÍA, SEMANA, MES, AÑO, TOTAL */}
+                  <div className="flex flex-wrap gap-1.5 bg-[#141a38] p-1.5 rounded-xl border border-purple-500/30">
+                    <button
+                      onClick={() => setPeriodFilter('today')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                        periodFilter === 'today'
+                          ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      📅 Hoy (Día)
+                    </button>
+                    <button
+                      onClick={() => setPeriodFilter('week')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                        periodFilter === 'week'
+                          ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      🗓️ Esta Semana
+                    </button>
+                    <button
+                      onClick={() => setPeriodFilter('month')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                        periodFilter === 'month'
+                          ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      📆 Este Mes
+                    </button>
+                    <button
+                      onClick={() => setPeriodFilter('year')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                        periodFilter === 'year'
+                          ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      🏛️ Este Año
+                    </button>
+                    <button
+                      onClick={() => setPeriodFilter('all')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                        periodFilter === 'all'
+                          ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      🌐 Histórico Total
+                    </button>
                   </div>
                 </div>
 
-                <div className="bg-[#0d122b] border border-purple-500/25 rounded-2xl p-6 shadow-xl">
-                  <h3 className="text-sm font-bold text-white mb-4 flex items-center justify-between">
-                    <span>Últimos Pedidos Registrados</span>
-                    <button onClick={() => setActiveTab('orders')} className="text-xs text-purple-400 hover:text-purple-300 underline cursor-pointer">
-                      Ver todos
-                    </button>
-                  </h3>
-                  {orders.length === 0 ? (
-                    <p className="text-xs text-slate-500 text-center py-6">Aún no hay pedidos en el sistema.</p>
+                {/* TARJETAS DE MÉTRICAS CALCULADAS */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {/* Ventas Confirmadas */}
+                  <div className="bg-[#0d122b] border border-purple-500/30 rounded-2xl p-5 shadow-lg relative overflow-hidden">
+                    <span className="text-3xl absolute right-4 top-4 opacity-15">💰</span>
+                    <p className="text-xs text-slate-400 font-semibold mb-1">Ventas Confirmadas</p>
+                    <p className="text-2xl font-black text-emerald-400">
+                      ${totalRevenue.toLocaleString('es-CO')} COP
+                    </p>
+                    <p className="text-[11px] text-slate-400 mt-2">
+                      De {completedOrders.length} pedido(s) completado(s)
+                    </p>
+                  </div>
+
+                  {/* Por Confirmar */}
+                  <div className="bg-[#0d122b] border border-purple-500/30 rounded-2xl p-5 shadow-lg relative overflow-hidden">
+                    <span className="text-3xl absolute right-4 top-4 opacity-15">⏳</span>
+                    <p className="text-xs text-slate-400 font-semibold mb-1">Por Confirmar (Pendientes)</p>
+                    <p className="text-2xl font-black text-amber-400">
+                      ${pendingRevenue.toLocaleString('es-CO')} COP
+                    </p>
+                    <p className="text-[11px] text-slate-400 mt-2">
+                      {pendingOrders.length} pedido(s) en espera
+                    </p>
+                  </div>
+
+                  {/* Unidades Físicas Vendidas */}
+                  <div className="bg-[#0d122b] border border-purple-500/30 rounded-2xl p-5 shadow-lg relative overflow-hidden">
+                    <span className="text-3xl absolute right-4 top-4 opacity-15">📦</span>
+                    <p className="text-xs text-slate-400 font-semibold mb-1">Artículos Vendidos</p>
+                    <p className="text-2xl font-black text-purple-300">
+                      {totalUnitsSold} unidades
+                    </p>
+                    <p className="text-[11px] text-slate-400 mt-2">
+                      Despachadas en este periodo
+                    </p>
+                  </div>
+
+                  {/* Recaudado en Envíos */}
+                  <div className="bg-[#0d122b] border border-purple-500/30 rounded-2xl p-5 shadow-lg relative overflow-hidden">
+                    <span className="text-3xl absolute right-4 top-4 opacity-15">🚚</span>
+                    <p className="text-xs text-slate-400 font-semibold mb-1">Fletes / Envíos</p>
+                    <p className="text-2xl font-black text-blue-400">
+                      ${totalShippingRevenue.toLocaleString('es-CO')} COP
+                    </p>
+                    <p className="text-[11px] text-slate-400 mt-2">
+                      Recaudado en domicilios
+                    </p>
+                  </div>
+                </div>
+
+                {/* TOP PRODUCTOS MÁS VENDIDOS DEL PERIODO */}
+                {topProducts.length > 0 && (
+                  <div className="bg-[#0d122b] border border-purple-500/25 rounded-2xl p-5 shadow-xl">
+                    <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
+                      <span>🏆</span> Top Productos Más Vendidos ({periodFilter.toUpperCase()})
+                    </h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                      {topProducts.slice(0, 3).map((item, idx) => (
+                        <div key={idx} className="bg-[#141a38] p-3 rounded-xl border border-purple-500/20 flex justify-between items-center">
+                          <div className="min-w-0 pr-2">
+                            <span className="text-[10px] text-purple-300 font-bold">#{idx + 1} Más Vendido</span>
+                            <h4 className="text-xs font-bold text-white truncate">{item.title}</h4>
+                            <p className="text-[11px] text-emerald-400 font-semibold">${item.revenue.toLocaleString('es-CO')} COP</p>
+                          </div>
+                          <span className="bg-purple-600/40 text-purple-200 border border-purple-500/40 text-xs font-black px-2.5 py-1 rounded-lg">
+                            {item.count} uds
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* HISTORIAL DETALLADO DE CLIENTES Y COMPRAS DEL PERIODO */}
+                <div className="bg-[#0d122b] border border-purple-500/25 rounded-2xl p-5 shadow-xl">
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                      <span>📋</span> Detalle de Compras ({filteredOrders.length} pedidos en el periodo)
+                    </h3>
+                    <span className="text-xs text-slate-400">
+                      {completedOrders.length} aprobados • {pendingOrders.length} pendientes • {cancelledOrders.length} cancelados
+                    </span>
+                  </div>
+
+                  {filteredOrders.length === 0 ? (
+                    <div className="py-10 text-center text-slate-500 text-xs">
+                      No se encontraron pedidos en el rango seleccionado.
+                    </div>
                   ) : (
                     <div className="overflow-x-auto">
                       <table className="w-full text-left text-xs">
-                        <thead className="text-slate-400 border-b border-purple-500/20">
+                        <thead className="text-slate-400 bg-[#090c1f] border-b border-purple-500/20">
                           <tr>
-                            <th className="pb-3 font-semibold">Cliente</th>
-                            <th className="pb-3 font-semibold">Teléfono / Ciudad</th>
-                            <th className="pb-3 font-semibold">Total</th>
-                            <th className="pb-3 font-semibold">Método</th>
-                            <th className="pb-3 font-semibold">Estado</th>
+                            <th className="py-3 px-3 font-semibold">Fecha</th>
+                            <th className="py-3 px-3 font-semibold">Cliente</th>
+                            <th className="py-3 px-3 font-semibold">Teléfono / Ciudad</th>
+                            <th className="py-3 px-3 font-semibold">Dirección</th>
+                            <th className="py-3 px-3 font-semibold">Productos</th>
+                            <th className="py-3 px-3 font-semibold">Envío</th>
+                            <th className="py-3 px-3 font-semibold">Total</th>
+                            <th className="py-3 px-3 font-semibold">Estado</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-purple-500/10 text-slate-300">
-                          {orders.slice(0, 5).map((o) => (
+                          {filteredOrders.map((o) => (
                             <tr key={o.id} className="hover:bg-white/5">
-                              <td className="py-3 font-medium text-white">{o.customer_name}</td>
-                              <td className="py-3">{o.customer_phone} • {o.customer_city}</td>
-                              <td className="py-3 font-bold text-purple-300">${Number(o.total).toLocaleString('es-CO')}</td>
-                              <td className="py-3 capitalize">{o.payment_method}</td>
-                              <td className="py-3">
+                              <td className="py-3 px-3 text-slate-400 whitespace-nowrap">
+                                {new Date(o.created_at).toLocaleDateString('es-CO')}
+                              </td>
+                              <td className="py-3 px-3 font-bold text-white whitespace-nowrap">{o.customer_name}</td>
+                              <td className="py-3 px-3 whitespace-nowrap">
+                                {o.customer_phone} <br />
+                                <span className="text-[10px] text-slate-400">{o.customer_city}</span>
+                              </td>
+                              <td className="py-3 px-3 max-w-[180px] truncate" title={o.customer_address}>
+                                {o.customer_address ? `${o.customer_address} (${o.customer_neighborhood || 'S/B'})` : 'No registrada'}
+                              </td>
+                              <td className="py-3 px-3">
+                                {Array.isArray(o.items) &&
+                                  o.items.map((it, i) => (
+                                    <span key={i} className="inline-block bg-[#141a38] px-1.5 py-0.5 rounded text-[10px] mr-1 my-0.5 text-purple-200">
+                                      {it.title} (x{it.quantity})
+                                    </span>
+                                  ))}
+                              </td>
+                              <td className="py-3 px-3 text-slate-300 whitespace-nowrap">
+                                ${Number(o.delivery_cost || 15000).toLocaleString('es-CO')}
+                              </td>
+                              <td className="py-3 px-3 font-black text-purple-300 whitespace-nowrap">
+                                ${Number(o.total).toLocaleString('es-CO')}
+                              </td>
+                              <td className="py-3 px-3 whitespace-nowrap">
                                 <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                                   o.status === 'completado'
                                     ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
@@ -679,23 +957,27 @@ export default function AdminDashboard() {
               </div>
             )}
 
-            {/* TAB PEDIDOS */}
+            {/* TAB PEDIDOS: GESTIÓN DE ACCIONES */}
             {activeTab === 'orders' && (
               <div className="space-y-4">
-                <h3 className="text-sm font-bold text-white mb-2">Historial Completo de Pedidos</h3>
+                <div className="flex justify-between items-center mb-2">
+                  <h3 className="text-sm font-bold text-white">Administración y Aprobación de Pedidos</h3>
+                  <span className="text-xs text-slate-400">{orders.length} pedidos registrados</span>
+                </div>
+
                 {orders.length === 0 ? (
                   <div className="bg-[#0d122b] rounded-2xl p-10 text-center text-slate-500 border border-purple-500/20">
-                    No se han recibido pedidos aún.
+                    No se han registrado pedidos aún.
                   </div>
                 ) : (
                   <div className="space-y-3">
                     {orders.map((order) => (
                       <div
                         key={order.id}
-                        className="bg-[#0d122b] border border-purple-500/25 rounded-2xl p-5 shadow-lg flex flex-col lg:flex-row justify-between gap-4 items-start lg:items-center"
+                        className="bg-[#0d122b] border border-purple-500/25 rounded-2xl p-4 sm:p-5 shadow-lg flex flex-col lg:flex-row justify-between gap-4 items-start lg:items-center"
                       >
                         <div className="space-y-1.5 flex-1">
-                          <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-3 flex-wrap">
                             <span className="text-base font-bold text-white">{order.customer_name}</span>
                             <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
                               order.status === 'completado'
@@ -706,8 +988,8 @@ export default function AdminDashboard() {
                             }`}>
                               {order.status.toUpperCase()}
                             </span>
-                            <span className="text-[11px] text-slate-500">
-                              {new Date(order.created_at).toLocaleDateString('es-CO')}
+                            <span className="text-[11px] text-slate-400">
+                              {new Date(order.created_at).toLocaleString('es-CO')}
                             </span>
                           </div>
 
@@ -718,6 +1000,7 @@ export default function AdminDashboard() {
 
                           <p className="text-xs text-slate-400">
                             💳 <strong>Pago:</strong> {order.payment_method === 'transferencia' ? 'Transferencia (Nequi/Bancolombia)' : 'Efectivo contra entrega'}
+                            {' • '}🚚 <strong>Envío:</strong> $15.000 COP
                             {order.notes && ` • 📝 ${order.notes}`}
                           </p>
 
@@ -740,14 +1023,14 @@ export default function AdminDashboard() {
                           {order.status === 'pendiente' && (
                             <div className="flex gap-2">
                               <button
-                                onClick={() => handleUpdateOrderStatus(order.id, 'completado')}
+                                onClick={() => handleApproveOrderAndDeductStock(order)}
                                 disabled={updatingId === order.id}
                                 className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-3.5 py-2 rounded-xl transition shadow-md active:scale-95 disabled:opacity-50 cursor-pointer"
                               >
-                                {updatingId === order.id ? 'Procesando...' : '✓ Aprobar & Descontar Stock'}
+                                {updatingId === order.id ? 'Actualizando stock...' : '✓ Aprobar & Descontar Stock'}
                               </button>
                               <button
-                                onClick={() => handleUpdateOrderStatus(order.id, 'cancelado')}
+                                onClick={() => handleCancelOrder(order.id)}
                                 disabled={updatingId === order.id}
                                 className="bg-rose-900/60 hover:bg-rose-800 text-rose-200 font-semibold text-xs px-3 py-2 rounded-xl transition border border-rose-700/50 cursor-pointer"
                               >
@@ -782,115 +1065,118 @@ export default function AdminDashboard() {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {products.map((prod) => (
-                    <div
-                      key={prod.id}
-                      className="bg-[#0d122b] border border-purple-500/25 rounded-2xl p-5 shadow-lg flex flex-col justify-between"
-                    >
-                      <div>
-                        <div className="flex items-center gap-3 mb-3">
-                          <img
-                            src={prod.image_url || (prod.images && prod.images[0]) || '/logo.png'}
-                            alt={prod.title}
-                            className="w-14 h-14 object-cover rounded-xl bg-slate-800 border border-purple-500/30"
-                          />
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <span className="text-[10px] bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded-full border border-purple-500/30">
-                                {prod.category || 'General'}
-                              </span>
-                              {prod.featured && (
-                                <span className="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded-full font-bold">
-                                  ⭐ En Banner
-                                </span>
-                              )}
-                            </div>
-                            <h4 className="text-sm font-bold text-white truncate mt-1">{prod.title}</h4>
-                            <p className="text-xs text-slate-400">
-                              {prod.images ? `${prod.images.length} fotos` : '1 foto'}
-                            </p>
-                          </div>
-                        </div>
-
-                        <p className="text-lg font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-300 mb-3">
-                          ${Number(prod.price).toLocaleString('es-CO')} COP
-                        </p>
-                      </div>
-
-                      <div className="space-y-3 pt-3 border-t border-purple-500/20">
-                        {/* Control de Stock */}
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs text-slate-300">Stock:</span>
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => handleUpdateStock(prod.id, prod.stock - 1)}
-                              className="w-7 h-7 bg-[#141a38] hover:bg-purple-600 rounded-lg text-xs font-bold text-white flex items-center justify-center border border-purple-500/30 cursor-pointer"
-                            >
-                              -
-                            </button>
-                            <input
-                              type="number"
-                              value={prod.stock}
-                              onChange={(e) => handleUpdateStock(prod.id, parseInt(e.target.value) || 0)}
-                              className="w-14 bg-[#141a38] border border-purple-500/40 rounded-lg py-1 text-center text-xs font-bold text-white focus:outline-none"
+                  {products.map((prod) => {
+                    const totalImgs = (prod.images && prod.images.length > 0) ? prod.images.length : (prod.image_url ? 1 : 0);
+                    return (
+                      <div
+                        key={prod.id}
+                        className="bg-[#0d122b] border border-purple-500/25 rounded-2xl p-5 shadow-lg flex flex-col justify-between"
+                      >
+                        <div>
+                          <div className="flex items-center gap-3 mb-3">
+                            <img
+                              src={prod.image_url || (prod.images && prod.images[0]) || '/logo.png'}
+                              alt={prod.title}
+                              className="w-14 h-14 object-contain rounded-xl bg-slate-900 p-1 border border-purple-500/30"
                             />
-                            <button
-                              onClick={() => handleUpdateStock(prod.id, prod.stock + 1)}
-                              className="w-7 h-7 bg-[#141a38] hover:bg-purple-600 rounded-lg text-xs font-bold text-white flex items-center justify-center border border-purple-500/30 cursor-pointer"
-                            >
-                              +
-                            </button>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded-full border border-purple-500/30">
+                                  {prod.category || 'General'}
+                                </span>
+                                {prod.featured && (
+                                  <span className="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded-full font-bold">
+                                    ⭐ En Banner
+                                  </span>
+                                )}
+                              </div>
+                              <h4 className="text-sm font-bold text-white truncate mt-1">{prod.title}</h4>
+                              <p className="text-xs text-slate-400">
+                                {totalImgs} imagen(es) cargada(s)
+                              </p>
+                            </div>
                           </div>
+
+                          <p className="text-lg font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-300 mb-3">
+                            ${Number(prod.price).toLocaleString('es-CO')} COP
+                          </p>
                         </div>
 
-                        {/* Botón rápido para Alternar en Banner */}
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs text-slate-300">Promocionar en Banner:</span>
-                          <button
-                            type="button"
-                            onClick={() => handleToggleProductFeatured(prod.id, Boolean(prod.featured))}
-                            className={`px-3 py-1 rounded-full text-[11px] font-bold transition cursor-pointer ${
-                              prod.featured
+                        <div className="space-y-3 pt-3 border-t border-purple-500/20">
+                          {/* Control de Stock */}
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-slate-300">Stock:</span>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => handleUpdateStock(prod.id, prod.stock - 1)}
+                                className="w-7 h-7 bg-[#141a38] hover:bg-purple-600 rounded-lg text-xs font-bold text-white flex items-center justify-center border border-purple-500/30 cursor-pointer"
+                              >
+                                -
+                              </button>
+                              <input
+                                type="number"
+                                value={prod.stock}
+                                onChange={(e) => handleUpdateStock(prod.id, parseInt(e.target.value) || 0)}
+                                className="w-14 bg-[#141a38] border border-purple-500/40 rounded-lg py-1 text-center text-xs font-bold text-white focus:outline-none"
+                              />
+                              <button
+                                onClick={() => handleUpdateStock(prod.id, prod.stock + 1)}
+                                className="w-7 h-7 bg-[#141a38] hover:bg-purple-600 rounded-lg text-xs font-bold text-white flex items-center justify-center border border-purple-500/30 cursor-pointer"
+                              >
+                                +
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Alternar en Banner */}
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-slate-300">Promocionar en Banner:</span>
+                            <button
+                              type="button"
+                              onClick={() => handleToggleProductFeatured(prod.id, Boolean(prod.featured))}
+                              className={`px-3 py-1 rounded-full text-[11px] font-bold transition cursor-pointer ${
+                                prod.featured
                                 ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
                                 : 'bg-slate-800 text-slate-400 border border-slate-700'
-                            }`}
-                          >
-                            {prod.featured ? '⭐ Sí (Destacado)' : '✕ No'}
-                          </button>
-                        </div>
+                              }`}
+                            >
+                              {prod.featured ? '⭐ Sí (Destacado)' : '✕ No'}
+                            </button>
+                          </div>
 
-                        {/* Acciones: Editar, Visibilidad, Eliminar */}
-                        <div className="flex items-center justify-between pt-1 gap-2">
-                          <button
-                            onClick={() => startEditProduct(prod)}
-                            className="bg-blue-600/30 hover:bg-blue-600/60 text-blue-200 border border-blue-500/40 px-3 py-1.5 rounded-xl text-xs font-semibold transition flex items-center gap-1 cursor-pointer"
-                          >
-                            <span>✏️</span>
-                            <span>Editar</span>
-                          </button>
+                          {/* Acciones */}
+                          <div className="flex items-center justify-between pt-1 gap-2">
+                            <button
+                              onClick={() => startEditProduct(prod)}
+                              className="bg-blue-600/30 hover:bg-blue-600/60 text-blue-200 border border-blue-500/40 px-3 py-1.5 rounded-xl text-xs font-semibold transition flex items-center gap-1 cursor-pointer"
+                            >
+                              <span>✏️</span>
+                              <span>Editar & Fotos</span>
+                            </button>
 
-                          <button
-                            onClick={() => handleToggleProductActive(prod.id, prod.active !== false)}
-                            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer ${
-                              prod.active !== false
-                                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                                : 'bg-slate-800 text-slate-400 border border-slate-700'
-                            }`}
-                          >
-                            {prod.active !== false ? '✓ Activo' : '✕ Oculto'}
-                          </button>
+                            <button
+                              onClick={() => handleToggleProductActive(prod.id, prod.active !== false)}
+                              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer ${
+                                prod.active !== false
+                                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                                  : 'bg-slate-800 text-slate-400 border border-slate-700'
+                              }`}
+                            >
+                              {prod.active !== false ? '✓ Activo' : '✕ Oculto'}
+                            </button>
 
-                          <button
-                            onClick={() => handleDeleteProduct(prod.id, prod.title)}
-                            className="text-xs text-red-400 hover:text-red-300 bg-red-950/30 hover:bg-red-900/50 border border-red-500/30 px-3 py-1.5 rounded-xl transition flex items-center gap-1 cursor-pointer"
-                            title="Eliminar producto"
-                          >
-                            <span>🗑️</span>
-                          </button>
+                            <button
+                              onClick={() => handleDeleteProduct(prod.id, prod.title)}
+                              className="text-xs text-red-400 hover:text-red-300 bg-red-950/30 hover:bg-red-900/50 border border-red-500/30 px-3 py-1.5 rounded-xl transition flex items-center gap-1 cursor-pointer"
+                              title="Eliminar producto"
+                            >
+                              <span>🗑️</span>
+                            </button>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -956,7 +1242,7 @@ export default function AdminDashboard() {
         )}
       </main>
 
-      {/* MODAL EDITAR PRODUCTO */}
+      {/* MODAL EDITAR PRODUCTO Y ORGANIZADOR DE FOTOS VISUAL */}
       {editingProduct && (
         <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
           <div className="bg-[#0d122b] border border-purple-500/40 rounded-3xl max-w-2xl w-full p-6 sm:p-8 relative shadow-2xl my-8 max-h-[92vh] flex flex-col">
@@ -967,12 +1253,12 @@ export default function AdminDashboard() {
               ✕
             </button>
 
-            <div className="flex items-center gap-2 mb-2">
+            <div className="flex items-center gap-2 mb-1">
               <span className="text-2xl">✏️</span>
-              <h3 className="text-lg font-bold text-white">Editar Producto y Galería</h3>
+              <h3 className="text-lg font-bold text-white">Editar Producto & Galería</h3>
             </div>
             <p className="text-xs text-slate-400 mb-4">
-              Modifica precios, descripciones y acomoda el orden de las fotos.
+              Ordena las fotos con las flechas (la foto #1 es la portada). Agrega o elimina las que necesites.
             </p>
 
             {editError && (
@@ -1032,11 +1318,10 @@ export default function AdminDashboard() {
                 </div>
               </div>
 
-              {/* Casilla de Destacar en Banner */}
               <div className="bg-[#141a38] border border-purple-500/30 rounded-xl p-3 flex items-center justify-between">
                 <div>
-                  <p className="text-white font-bold text-xs">⭐ Promocionar en Banner Rotativo de la Tienda</p>
-                  <p className="text-[11px] text-slate-400">El producto aparecerá como una diapositiva destacada principal.</p>
+                  <p className="text-white font-bold text-xs">⭐ Promocionar en Banner Rotativo</p>
+                  <p className="text-[11px] text-slate-400">Mostrar este producto en el carrusel de inicio.</p>
                 </div>
                 <input
                   type="checkbox"
@@ -1066,79 +1351,74 @@ export default function AdminDashboard() {
                 />
               </div>
 
-              {/* ORGANIZADOR DE FOTOS */}
+              {/* ORGANIZADOR VISUAL DE TODAS LAS IMÁGENES */}
               <div className="bg-[#141a38] border border-purple-500/30 rounded-2xl p-4">
                 <div className="flex justify-between items-center mb-2">
                   <div>
                     <label className="block text-white font-bold text-xs">
-                      🖼️ Organizador de Galería e Imagen de Portada
+                      🖼️ Galería de Imágenes ({editImages.length} fotos)
                     </label>
                     <p className="text-[11px] text-slate-400">
-                      La <strong>Foto #1</strong> es la portada. Usa ◀ y ▶ para reordenar.
+                      La foto <strong>#1 (Portada)</strong> es la principal en la tienda.
                     </p>
                   </div>
-                  <span className="text-xs text-purple-300 font-semibold">{editImages.length} fotos</span>
                 </div>
 
-                {editImages.length === 0 ? (
-                  <p className="text-xs text-amber-300 py-3">Este producto no tiene fotos cargadas actualmente.</p>
-                ) : (
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 my-3">
-                    {editImages.map((imgUrl, idx) => (
-                      <div
-                        key={idx}
-                        className={`relative rounded-xl overflow-hidden border-2 p-1 bg-[#0b0e24] flex flex-col items-center ${
-                          idx === 0 ? 'border-emerald-400 shadow-md shadow-emerald-500/20' : 'border-purple-500/30'
-                        }`}
-                      >
-                        <span className={`absolute top-2 left-2 text-[10px] font-black px-1.5 py-0.5 rounded-md z-10 ${
-                          idx === 0 ? 'bg-emerald-500 text-black' : 'bg-black/70 text-white'
-                        }`}>
-                          {idx === 0 ? '★ Portada' : `#${idx + 1}`}
-                        </span>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 my-3">
+                  {editImages.map((imgUrl, idx) => (
+                    <div
+                      key={idx}
+                      className={`relative rounded-xl overflow-hidden border-2 p-1.5 bg-[#0b0e24] flex flex-col items-center ${
+                        idx === 0 ? 'border-emerald-400 shadow-md shadow-emerald-500/20' : 'border-purple-500/30'
+                      }`}
+                    >
+                      <span className={`absolute top-2 left-2 text-[10px] font-black px-1.5 py-0.5 rounded-md z-10 ${
+                        idx === 0 ? 'bg-emerald-500 text-black' : 'bg-black/80 text-white'
+                      }`}>
+                        {idx === 0 ? '★ Portada' : `#${idx + 1}`}
+                      </span>
 
-                        <div className="w-full h-24 rounded-lg overflow-hidden bg-slate-900 mb-2 mt-4">
-                          <img src={imgUrl} alt={`Foto ${idx}`} className="w-full h-full object-cover" />
-                        </div>
-
-                        <div className="flex items-center justify-between w-full px-1">
-                          <button
-                            type="button"
-                            disabled={idx === 0}
-                            onClick={() => moveImageLeft(idx)}
-                            className="w-6 h-6 bg-[#1f2652] hover:bg-purple-600 disabled:opacity-30 rounded text-[11px] font-bold text-white flex items-center justify-center cursor-pointer"
-                            title="Mover antes"
-                          >
-                            ◀
-                          </button>
-                          
-                          <button
-                            type="button"
-                            onClick={() => removeImageAt(idx)}
-                            className="text-red-400 hover:text-red-300 text-xs p-1 cursor-pointer"
-                            title="Quitar foto"
-                          >
-                            ✕
-                          </button>
-
-                          <button
-                            type="button"
-                            disabled={idx === editImages.length - 1}
-                            onClick={() => moveImageRight(idx)}
-                            className="w-6 h-6 bg-[#1f2652] hover:bg-purple-600 disabled:opacity-30 rounded text-[11px] font-bold text-white flex items-center justify-center cursor-pointer"
-                            title="Mover después"
-                          >
-                            ▶
-                          </button>
-                        </div>
+                      <div className="w-full h-24 rounded-lg overflow-hidden bg-slate-900 mb-2 mt-4 p-1 flex items-center justify-center">
+                        <img src={imgUrl} alt={`Foto ${idx}`} className="w-full h-full object-contain" />
                       </div>
-                    ))}
-                  </div>
-                )}
+
+                      <div className="flex items-center justify-between w-full px-1">
+                        <button
+                          type="button"
+                          disabled={idx === 0}
+                          onClick={() => moveImageLeft(idx)}
+                          className="w-6 h-6 bg-[#1f2652] hover:bg-purple-600 disabled:opacity-20 rounded text-[11px] font-bold text-white flex items-center justify-center cursor-pointer"
+                          title="Mover a la izquierda"
+                        >
+                          ◀
+                        </button>
+                        
+                        <button
+                          type="button"
+                          onClick={() => removeImageAt(idx)}
+                          className="text-red-400 hover:text-red-300 text-xs p-1 cursor-pointer"
+                          title="Eliminar foto"
+                        >
+                          ✕
+                        </button>
+
+                        <button
+                          type="button"
+                          disabled={idx === editImages.length - 1}
+                          onClick={() => moveImageRight(idx)}
+                          className="w-6 h-6 bg-[#1f2652] hover:bg-purple-600 disabled:opacity-20 rounded text-[11px] font-bold text-white flex items-center justify-center cursor-pointer"
+                          title="Mover a la derecha"
+                        >
+                          ▶
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
 
                 <div className="mt-3 pt-3 border-t border-purple-500/20">
                   <label className="block text-slate-300 font-semibold mb-1">
-                    ➕ Añadir más fotos al producto
+                    ➕ Subir más imágenes a este producto
                   </label>
                   <input
                     type="file"
@@ -1153,7 +1433,7 @@ export default function AdminDashboard() {
                   />
                   {editNewFiles.length > 0 && (
                     <p className="text-[11px] text-emerald-300 mt-1">
-                      + {editNewFiles.length} foto(s) nuevas listas para sumarse.
+                      + {editNewFiles.length} foto(s) nuevas se sumarán al guardar.
                     </p>
                   )}
                 </div>
@@ -1165,14 +1445,7 @@ export default function AdminDashboard() {
                   disabled={isUpdating}
                   className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-bold py-3.5 rounded-xl transition shadow-lg shadow-purple-900/40 text-sm active:scale-95 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
                 >
-                  {isUpdating ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                      <span>Guardando cambios...</span>
-                    </>
-                  ) : (
-                    <span>Guardar Cambios del Producto</span>
-                  )}
+                  {isUpdating ? 'Guardando cambios...' : 'Guardar Cambios del Producto'}
                 </button>
               </div>
             </form>
@@ -1180,7 +1453,7 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {/* MODAL CREAR PRODUCTO */}
+      {/* MODAL CREAR NUEVO PRODUCTO */}
       {showAddModal && (
         <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
           <div className="bg-[#0d122b] border border-purple-500/40 rounded-3xl max-w-xl w-full p-6 sm:p-8 relative shadow-2xl my-8 max-h-[90vh] flex flex-col">
@@ -1309,11 +1582,6 @@ export default function AdminDashboard() {
                   }}
                   className="w-full text-xs text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-purple-600/30 file:text-purple-200 hover:file:bg-purple-600/50 cursor-pointer bg-[#141a38] p-2 rounded-xl border border-purple-500/30"
                 />
-                {createFiles.length > 0 && (
-                  <p className="text-[11px] text-purple-300 mt-1">
-                    {createFiles.length} foto(s) seleccionada(s)
-                  </p>
-                )}
               </div>
 
               <div className="pt-2">
@@ -1322,14 +1590,7 @@ export default function AdminDashboard() {
                   disabled={isCreating}
                   className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-bold py-3.5 rounded-xl transition shadow-lg shadow-purple-900/40 text-sm active:scale-95 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
                 >
-                  {isCreating ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                      <span>Guardando y publicando...</span>
-                    </>
-                  ) : (
-                    <span>Guardar y Publicar Producto</span>
-                  )}
+                  {isCreating ? 'Guardando y publicando...' : 'Guardar y Publicar Producto'}
                 </button>
               </div>
             </form>
