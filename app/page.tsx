@@ -65,16 +65,16 @@ export default function Home() {
   const [currentSlide, setCurrentSlide] = useState<number>(0);
   const [showWhatsappBubble, setShowWhatsappBubble] = useState<boolean>(true);
 
-  // Checkout
+  // Formulario Checkout 100% Domicilio
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerCity, setCustomerCity] = useState('');
-  const [deliveryType, setDeliveryType] = useState<'domicilio' | 'recogida'>('domicilio');
   const [customerAddress, setCustomerAddress] = useState('');
   const [customerNeighborhood, setCustomerNeighborhood] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'transferencia' | 'efectivo'>('transferencia');
   const [notes, setNotes] = useState('');
   const [isSubmittingOrder, setIsSubmittingOrder] = useState<boolean>(false);
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
 
   const SHIPPING_COST = 15000;
 
@@ -204,8 +204,7 @@ export default function Home() {
   };
 
   const cartSubtotal = cart.reduce((acc, item) => acc + item.price * item.quantity, 0);
-  const currentDeliveryCost = deliveryType === 'domicilio' ? SHIPPING_COST : 0;
-  const cartGrandTotal = cartSubtotal + currentDeliveryCost;
+  const cartGrandTotal = cartSubtotal + SHIPPING_COST;
   const cartItemCount = cart.reduce((acc, item) => acc + item.quantity, 0);
 
   const toggleFavorite = (id: string) => {
@@ -234,44 +233,56 @@ export default function Home() {
     return matchesSearch && matchesCategory && isActive;
   });
 
+  // CONFIRMACIÓN DE PEDIDO CON VERIFICACIÓN OBLIGATORIA EN SUPABASE
   const handleCheckoutSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (cart.length === 0 || isSubmittingOrder) return;
 
     setIsSubmittingOrder(true);
+    setCheckoutError(null);
+
     const itemsPayload = cart.map((c) => ({
-      id: c.id,
+      id: String(c.id),
       title: c.title,
-      price: c.price,
-      quantity: c.quantity,
+      price: Number(c.price),
+      quantity: Number(c.quantity),
     }));
 
     try {
-      const { error } = await supabase.from('orders').insert([
+      const { data, error } = await supabase.from('orders').insert([
         {
-          customer_name: customerName,
-          customer_phone: customerPhone,
-          customer_city: customerCity,
-          delivery_type: deliveryType,
-          customer_address: deliveryType === 'domicilio' ? customerAddress : '',
-          customer_neighborhood: deliveryType === 'domicilio' ? customerNeighborhood : '',
+          customer_name: customerName.trim(),
+          customer_phone: customerPhone.trim(),
+          customer_city: customerCity.trim(),
+          delivery_type: 'domicilio',
+          customer_address: customerAddress.trim(),
+          customer_neighborhood: customerNeighborhood.trim() || 'No especificado',
           payment_method: paymentMethod,
-          notes: notes,
+          notes: notes.trim(),
           items: itemsPayload,
           subtotal: cartSubtotal,
-          delivery_cost: currentDeliveryCost,
+          delivery_cost: SHIPPING_COST,
           total: cartGrandTotal,
           status: 'pendiente',
         },
-      ]);
+      ]).select();
 
       if (error) {
-        console.error('Error guardando pedido en Supabase:', error.message);
+        console.error('Error al insertar orden:', error);
+        setCheckoutError('No se pudo registrar la orden en la base de datos: ' + error.message);
+        setIsSubmittingOrder(false);
+        return;
       }
-    } catch (err) {
-      console.error('Error de conexión:', err);
+
+      console.log('Orden guardada correctamente en Supabase:', data);
+    } catch (err: any) {
+      console.error('Excepción al registrar pedido:', err);
+      setCheckoutError('Error de conexión al guardar el pedido. Intenta nuevamente.');
+      setIsSubmittingOrder(false);
+      return;
     }
 
+    // Si guardó con éxito en Supabase, abre WhatsApp
     const itemsText = cart
       .map(
         (item, index) =>
@@ -283,24 +294,17 @@ export default function Home() {
     msg += `*Cliente:* ${customerName}\n`;
     msg += `*Teléfono:* ${customerPhone}\n`;
     msg += `*Ciudad:* ${customerCity}\n`;
-    msg += `*Tipo de Entrega:* ${deliveryType === 'domicilio' ? 'Envío a Domicilio' : 'Pasa a Recoger'}\n`;
-
-    if (deliveryType === 'domicilio') {
-      msg += `*Dirección:* ${customerAddress}\n`;
-      if (customerNeighborhood) msg += `*Barrio:* ${customerNeighborhood}\n`;
-      msg += `*Costo de Envío:* $${SHIPPING_COST.toLocaleString('es-CO')} COP\n`;
-    }
-
+    msg += `*Tipo de Entrega:* Envío a Domicilio (100% a domicilio)\n`;
+    msg += `*Dirección:* ${customerAddress}\n`;
+    if (customerNeighborhood) msg += `*Barrio:* ${customerNeighborhood}\n`;
     msg += `*Método de Pago:* ${paymentMethod === 'transferencia' ? 'Transferencia (Nequi / Bancolombia)' : 'Efectivo contra entrega'}\n`;
     if (notes) msg += `*Notas:* ${notes}\n`;
 
     msg += `\n*PRODUCTOS:*\n${itemsText}\n\n`;
     msg += `*Subtotal:* $${cartSubtotal.toLocaleString('es-CO')} COP\n`;
-    if (deliveryType === 'domicilio') {
-      msg += `*Envío:* $${SHIPPING_COST.toLocaleString('es-CO')} COP\n`;
-    }
+    msg += `*Costo de Envío:* $${SHIPPING_COST.toLocaleString('es-CO')} COP\n`;
     msg += `*TOTAL A PAGAR:* $${cartGrandTotal.toLocaleString('es-CO')} COP\n\n`;
-    msg += `Hola, acabo de enviar mi pedido por la web. ¿Me pueden confirmar para gestionar el despacho?`;
+    msg += `Hola Omniverse Store, acabo de registrar este pedido en la web. Confirmo los datos para coordinar el pago y despacho.`;
 
     const finalUrl = `https://api.whatsapp.com/send?phone=573057785317&text=${encodeURIComponent(msg)}`;
     window.open(finalUrl, '_blank');
@@ -359,7 +363,7 @@ export default function Home() {
 
       <div className="relative z-10 flex flex-col min-h-screen">
 
-        {/* 1. BARRA SUPERIOR TOTALMENTE ADAPTADA */}
+        {/* 1. BARRA SUPERIOR */}
         <header className="sticky top-0 z-40 bg-[#070a1a]/90 backdrop-blur-md border-b border-purple-500/20 px-3 py-2.5 sm:px-6 md:px-8">
           <div className="max-w-7xl mx-auto flex items-center justify-between gap-2 sm:gap-4">
             
@@ -476,7 +480,6 @@ export default function Home() {
                 {bannerSlides.map((slide) => (
                   <div key={slide.id} className="w-full h-full shrink-0 relative flex items-center justify-center">
                     
-                    {/* BANNER 1: LOGO CENTRADO Y ESCALADO */}
                     {slide.type === 'image' && (
                       <div className="w-full h-full relative overflow-hidden bg-[#070a1a] flex items-center justify-center p-2 sm:p-4">
                         <img
@@ -493,7 +496,6 @@ export default function Home() {
                       </div>
                     )}
 
-                    {/* PRODUCTO DESTACADO */}
                     {slide.type === 'product' && slide.product && (
                       <div className={`w-full h-full bg-gradient-to-r ${slide.gradient || 'from-[#120a2e] via-[#1f114d] to-[#0c0f2b]'} p-4 sm:p-8 md:p-10 flex items-center justify-between rounded-[24px] sm:rounded-[32px] border border-purple-500/20 relative overflow-hidden`}>
                         <div className="flex-1 pr-2 sm:pr-4 z-10">
@@ -531,7 +533,6 @@ export default function Home() {
                       </div>
                     )}
 
-                    {/* REDES SOCIALES */}
                     {slide.type === 'social' && (
                       <div className={`w-full h-full bg-gradient-to-r ${slide.gradient || 'from-[#0b1c3a] to-[#200d3d]'} p-5 sm:p-10 flex flex-col justify-center rounded-[24px] sm:rounded-[32px] border border-purple-500/20 relative overflow-hidden`}>
                         {slide.platform === 'instagram' ? (
@@ -672,7 +673,7 @@ export default function Home() {
                 </div>
                 <div>
                   <h4 className="text-xs font-bold text-white">Envíos a todo el país</h4>
-                  <p className="text-[10px] text-slate-400">Rápidos y con seguimiento</p>
+                  <p className="text-[10px] text-slate-400">100% domicilio con cobertura nacional</p>
                 </div>
               </div>
 
@@ -763,7 +764,6 @@ export default function Home() {
                         key={product.id}
                         className="bg-[#0d122b]/85 backdrop-blur-md rounded-2xl overflow-hidden border border-purple-500/25 flex flex-col hover:border-purple-400/60 transition-all duration-300 shadow-xl group hover:-translate-y-1"
                       >
-                        {/* IMAGEN DE PRODUCTO */}
                         <div 
                           className="h-36 sm:h-52 w-full bg-[#121633] relative overflow-hidden cursor-pointer flex items-center justify-center p-2"
                           onClick={() => {
@@ -802,7 +802,6 @@ export default function Home() {
                           </button>
                         </div>
 
-                        {/* CUERPO DE LA TARJETA */}
                         <div className="p-3 sm:p-5 flex-1 flex flex-col justify-between">
                           <div 
                             className="cursor-pointer"
@@ -1037,7 +1036,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* 6. CHECKOUT CON CÁLCULO DE COSTO DE ENVÍO */}
+        {/* 6. CHECKOUT 100% A DOMICILIO */}
         {isCheckoutOpen && (
           <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
             <div className="bg-[#0d122b] border border-purple-500/40 rounded-3xl max-w-lg w-full p-4 sm:p-8 relative shadow-2xl my-auto">
@@ -1050,13 +1049,19 @@ export default function Home() {
 
               <div className="flex items-center gap-2 mb-1.5">
                 <span className="text-xl sm:text-2xl">📋</span>
-                <h3 className="text-base sm:text-xl font-bold text-white">Datos de tu Pedido</h3>
+                <h3 className="text-base sm:text-xl font-bold text-white">Datos de Envío a Domicilio</h3>
               </div>
-              <p className="text-[11px] sm:text-xs text-slate-400 mb-4 sm:mb-6">
-                Completa tus datos para registrar la orden en el sistema y despachar por WhatsApp.
+              <p className="text-[11px] sm:text-xs text-slate-400 mb-4">
+                Entregamos directamente en tu puerta en cualquier lugar del país.
               </p>
 
-              <form onSubmit={handleCheckoutSubmit} className="space-y-3 sm:space-y-4 text-xs">
+              {checkoutError && (
+                <div className="mb-3 p-3 bg-red-950/60 border border-red-500/50 rounded-xl text-red-200 text-xs font-semibold">
+                  ⚠️ {checkoutError}
+                </div>
+              )}
+
+              <form onSubmit={handleCheckoutSubmit} className="space-y-3 text-xs">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3">
                   <div>
                     <label className="block text-slate-300 font-semibold mb-1">Nombre Completo *</label>
@@ -1066,7 +1071,7 @@ export default function Home() {
                       value={customerName}
                       onChange={(e) => setCustomerName(e.target.value)}
                       placeholder="Ej. Laura Gómez"
-                      className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3 py-2 sm:py-2.5 text-white focus:outline-none focus:border-purple-400"
+                      className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-purple-400"
                     />
                   </div>
                   <div>
@@ -1077,61 +1082,47 @@ export default function Home() {
                       value={customerPhone}
                       onChange={(e) => setCustomerPhone(e.target.value)}
                       placeholder="Ej. 300 123 4567"
-                      className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3 py-2 sm:py-2.5 text-white focus:outline-none focus:border-purple-400"
+                      className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-purple-400"
                     />
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3">
+                <div>
+                  <label className="block text-slate-300 font-semibold mb-1">Ciudad o Municipio *</label>
+                  <input
+                    type="text"
+                    required
+                    value={customerCity}
+                    onChange={(e) => setCustomerCity(e.target.value)}
+                    placeholder="Ej. Bogotá, Medellín, Cali..."
+                    className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-purple-400"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3 bg-[#121638]/70 p-3 rounded-2xl border border-purple-500/25">
                   <div>
-                    <label className="block text-slate-300 font-semibold mb-1">Ciudad / Municipio *</label>
+                    <label className="block text-slate-300 font-semibold mb-1">Dirección Exacta de Entrega *</label>
                     <input
                       type="text"
                       required
-                      value={customerCity}
-                      onChange={(e) => setCustomerCity(e.target.value)}
-                      placeholder="Ej. Bogotá, Medellín..."
-                      className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3 py-2 sm:py-2.5 text-white focus:outline-none focus:border-purple-400"
+                      value={customerAddress}
+                      onChange={(e) => setCustomerAddress(e.target.value)}
+                      placeholder="Ej. Calle 123 # 45-67 Apto 201"
+                      className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-purple-400"
                     />
                   </div>
                   <div>
-                    <label className="block text-slate-300 font-semibold mb-1">Tipo de Entrega</label>
-                    <select
-                      value={deliveryType}
-                      onChange={(e) => setDeliveryType(e.target.value as 'domicilio' | 'recogida')}
-                      className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3 py-2 sm:py-2.5 text-white focus:outline-none focus:border-purple-400 cursor-pointer"
-                    >
-                      <option value="domicilio">🚚 Envío a Domicilio (+$15.000 COP)</option>
-                      <option value="recogida">🏬 Pasa a Recoger (Gratis - $0 COP)</option>
-                    </select>
+                    <label className="block text-slate-300 font-semibold mb-1">Barrio o Conjunto *</label>
+                    <input
+                      type="text"
+                      required
+                      value={customerNeighborhood}
+                      onChange={(e) => setCustomerNeighborhood(e.target.value)}
+                      placeholder="Ej. Chapinero, Poblado..."
+                      className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-purple-400"
+                    />
                   </div>
                 </div>
-
-                {deliveryType === 'domicilio' && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3 bg-[#121638]/60 p-3 rounded-2xl border border-purple-500/20">
-                    <div>
-                      <label className="block text-slate-300 font-semibold mb-1">Dirección de Entrega *</label>
-                      <input
-                        type="text"
-                        required
-                        value={customerAddress}
-                        onChange={(e) => setCustomerAddress(e.target.value)}
-                        placeholder="Ej. Calle 123 # 45-67 Apto 201"
-                        className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-purple-400"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-slate-300 font-semibold mb-1">Barrio</label>
-                      <input
-                        type="text"
-                        value={customerNeighborhood}
-                        onChange={(e) => setCustomerNeighborhood(e.target.value)}
-                        placeholder="Ej. Chapinero, Poblado..."
-                        className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-purple-400"
-                      />
-                    </div>
-                  </div>
-                )}
 
                 <div>
                   <label className="block text-slate-300 font-semibold mb-1">Método de Pago Preferido</label>
@@ -1139,7 +1130,7 @@ export default function Home() {
                     <button
                       type="button"
                       onClick={() => setPaymentMethod('transferencia')}
-                      className={`p-2 sm:p-2.5 rounded-xl border text-center transition font-medium cursor-pointer text-[11px] sm:text-xs ${
+                      className={`p-2 rounded-xl border text-center transition font-medium cursor-pointer text-[11px] sm:text-xs ${
                         paymentMethod === 'transferencia'
                           ? 'border-purple-500 bg-purple-600/30 text-white'
                           : 'border-purple-500/20 bg-[#141a38] text-slate-400'
@@ -1150,7 +1141,7 @@ export default function Home() {
                     <button
                       type="button"
                       onClick={() => setPaymentMethod('efectivo')}
-                      className={`p-2 sm:p-2.5 rounded-xl border text-center transition font-medium cursor-pointer text-[11px] sm:text-xs ${
+                      className={`p-2 rounded-xl border text-center transition font-medium cursor-pointer text-[11px] sm:text-xs ${
                         paymentMethod === 'efectivo'
                           ? 'border-purple-500 bg-purple-600/30 text-white'
                           : 'border-purple-500/20 bg-[#141a38] text-slate-400'
@@ -1167,21 +1158,20 @@ export default function Home() {
                     rows={2}
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
-                    placeholder="Instrucciones del timbre, referencias..."
+                    placeholder="Instrucciones de timbre, torre, interior..."
                     className="w-full bg-[#141a38] border border-purple-500/30 rounded-xl px-3 py-1.5 text-white focus:outline-none focus:border-purple-400 text-xs"
                   />
                 </div>
 
+                {/* DESGLOSE CLARO DE VALORES */}
                 <div className="bg-[#121638] rounded-xl p-3 space-y-1.5 border border-purple-500/20">
                   <div className="flex justify-between text-xs text-slate-300">
-                    <span>Subtotal de productos:</span>
+                    <span>Subtotal productos:</span>
                     <span>${cartSubtotal.toLocaleString('es-CO')} COP</span>
                   </div>
                   <div className="flex justify-between text-xs text-slate-300">
-                    <span>Costo de Envío:</span>
-                    <span className={deliveryType === 'domicilio' ? 'text-amber-300 font-semibold' : 'text-emerald-400 font-semibold'}>
-                      {deliveryType === 'domicilio' ? `+$${SHIPPING_COST.toLocaleString('es-CO')} COP` : 'Gratis ($0 COP)'}
-                    </span>
+                    <span>Envío a domicilio nacional:</span>
+                    <span className="text-amber-300 font-semibold">+$15.000 COP</span>
                   </div>
                   <div className="flex justify-between pt-1.5 border-t border-purple-500/20 font-black text-sm sm:text-base">
                     <span className="text-white">TOTAL A PAGAR:</span>
@@ -1194,12 +1184,12 @@ export default function Home() {
                 <button
                   type="submit"
                   disabled={isSubmittingOrder}
-                  className="w-full bg-[#25D366] hover:bg-[#20ba59] text-white font-bold py-3 sm:py-3.5 rounded-xl transition duration-200 shadow-xl shadow-emerald-900/30 text-xs sm:text-sm flex items-center justify-center gap-2 active:scale-95 cursor-pointer disabled:opacity-50"
+                  className="w-full bg-[#25D366] hover:bg-[#20ba59] text-white font-bold py-3.5 rounded-xl transition duration-200 shadow-xl shadow-emerald-900/30 text-xs sm:text-sm flex items-center justify-center gap-2 active:scale-95 cursor-pointer disabled:opacity-50"
                 >
                   <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
                     <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z"/>
                   </svg>
-                  <span>{isSubmittingOrder ? 'Guardando pedido...' : 'Confirmar por WhatsApp'}</span>
+                  <span>{isSubmittingOrder ? 'Guardando pedido...' : 'Confirmar Pedido por WhatsApp'}</span>
                 </button>
               </form>
             </div>
@@ -1336,7 +1326,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* 8. MODAL DE TRATAMIENTO DE DATOS */}
+        {/* 8. MODAL TRATAMIENTO DE DATOS */}
         {showTermsModal && (
           <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-4">
             <div className="bg-[#0b0e24] border border-purple-500/40 rounded-2xl max-w-lg w-full p-5 sm:p-6 relative shadow-2xl max-h-[80vh] flex flex-col">
@@ -1357,7 +1347,7 @@ export default function Home() {
                   <strong>Finalidad:</strong>
                 </p>
                 <ul className="list-disc pl-4 space-y-1 text-[11px] sm:text-xs">
-                  <li>Procesar, despachar y entregar pedidos.</li>
+                  <li>Procesar, despachar y entregar pedidos a domicilio.</li>
                   <li>Atención al cliente y confirmación de pagos vía WhatsApp.</li>
                   <li>Comunicaciones promocionales y novedades.</li>
                 </ul>
